@@ -59,6 +59,10 @@ Kubernetes가 컨테이너 오케스트레이션 및 워커 노드 스케쥴링�
   - 요청 본문: user_id, problem_id, pod_spec (Kubernetes Pod YAML 스펙) 등
   - 응답: 생성된 스택의 정보 (stack_id, 할당된 node_id 등)
 
+- `GET /stacks`
+  - 설명: 모든 스택 목록을 조회합니다.
+  - 응답: 전체 스택 리스트
+
 - `GET /stacks/{stack_id}`
   - 설명: 특정 스택의 정보를 조회합니다.
   - 경로 매개변수: stack_id - 조회할 스택의 ID
