@@ -15,13 +15,13 @@ import (
 
 type Service struct {
 	cfg       config.StackConfig
-	repo      Repository
-	k8s       KubernetesInterface
+	repo      RepositoryClientAPI
+	k8s       KubernetesClientAPI
 	validator *Validator
 	now       func() time.Time
 }
 
-func NewService(cfg config.StackConfig, repo Repository, k8s KubernetesInterface) *Service {
+func NewService(cfg config.StackConfig, repo RepositoryClientAPI, k8s KubernetesClientAPI) *Service {
 	return &Service{
 		cfg:       cfg,
 		repo:      repo,
@@ -230,7 +230,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Stack, error) {
 }
 
 func (s *Service) Stats(ctx context.Context) (Stats, error) {
-	items, err := s.repo.ListAll(ctx)
+	items, err := s.ListAll(ctx)
 	if err != nil {
 		return Stats{}, err
 	}
@@ -277,7 +277,7 @@ func (s *Service) nodePublicIP(ctx context.Context, nodeID string) *string {
 
 func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 	now := s.now()
-	items, err := s.repo.ListAll(ctx)
+	items, err := s.ListAll(ctx)
 	if err != nil {
 		log.Printf("level=ERROR msg=\"list stacks for cleanup failed\" err=%q", err.Error())
 		log.Printf("level=INFO msg=\"cleanup loop completed\" scanned=0 targets=0 cleaned=0 failures=1 resource_scan_errors=0 orphan_scan_errors=0 note=%q", "list stacks failed")
@@ -316,7 +316,7 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 		}
 	}
 
-	remainingStacks, err := s.repo.ListAll(ctx)
+	remainingStacks, err := s.ListAll(ctx)
 	if err != nil {
 		orphanScanErrors++
 		failures++
@@ -374,7 +374,7 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 			}
 		}
 
-		remainingStacks, err = s.repo.ListAll(ctx)
+		remainingStacks, err = s.ListAll(ctx)
 		if err != nil {
 			orphanScanErrors++
 			failures++

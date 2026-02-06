@@ -8,32 +8,6 @@ import (
 	"time"
 )
 
-type KubernetesInterface interface {
-	CreatePodAndService(ctx context.Context, req ProvisionRequest) (ProvisionResult, error)
-	DeletePodAndService(ctx context.Context, namespace, podID, serviceName string) error
-	GetPodStatus(ctx context.Context, namespace, podID string) (Status, string, error)
-	ListPods(ctx context.Context, namespace string) ([]string, error)
-	ListServices(ctx context.Context, namespace string) ([]string, error)
-	NodeExists(ctx context.Context, nodeID string) (bool, error)
-	HasIngressNetworkPolicy(ctx context.Context, namespace string) (bool, error)
-	GetNodePublicIP(ctx context.Context, nodeID string) (*string, error)
-}
-
-type ProvisionRequest struct {
-	Namespace  string
-	StackID    string
-	PodSpecYML string
-	TargetPort int
-	NodePort   int
-}
-
-type ProvisionResult struct {
-	PodID       string
-	ServiceName string
-	NodeID      string
-	Status      Status
-}
-
 type MockKubernetesClient struct {
 	mu       sync.RWMutex
 	rand     *rand.Rand

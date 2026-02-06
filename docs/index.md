@@ -94,6 +94,7 @@ Base URL: `http://localhost:8081`
 - AWS DynamoDB table with keys:
   - partition key: `pk` (String)
   - sort key: `sk` (String)
+  - GSI `gsi1` (`gsi1pk`, `gsi1sk`) for listing stacks
 
 ## Key Environment Variables
 

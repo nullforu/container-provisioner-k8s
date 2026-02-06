@@ -24,6 +24,11 @@ import (
 const (
 	ddbPK = "pk"
 	ddbSK = "sk"
+
+	ddbGSIAllPK   = "gsi1pk"
+	ddbGSIAllSK   = "gsi1sk"
+	ddbGSIAllName = "gsi1"
+	ddbAllPKValue = "STACKS"
 )
 
 type DynamoRepository struct {
@@ -54,11 +59,6 @@ func (r *DynamoRepository) Create(ctx context.Context, st Stack, constraints Cre
 	byID[ddbSK] = avS("META")
 	byID["item_type"] = avS("stack_by_id")
 
-	catalog := copyItem(base)
-	catalog[ddbPK] = avS("STACKS")
-	catalog[ddbSK] = avS(stackSK(st.StackID))
-	catalog["item_type"] = avS("stack_catalog")
-
 	keyGlobal := map[string]ddtypes.AttributeValue{ddbPK: avS("GLOBAL"), ddbSK: avS("RESOURCES")}
 	keyPort := map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(st.NodePort))}
 	cpuBefore := constraints.MaxReservedCPUMilli - st.RequestedMilli
@@ -70,7 +70,6 @@ func (r *DynamoRepository) Create(ctx context.Context, st Stack, constraints Cre
 	_, err := r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
 		TransactItems: []ddtypes.TransactWriteItem{
 			{Put: &ddtypes.Put{TableName: &r.table, Item: byID, ConditionExpression: strPtr("attribute_not_exists(pk) AND attribute_not_exists(sk)")}},
-			{Put: &ddtypes.Put{TableName: &r.table, Item: catalog, ConditionExpression: strPtr("attribute_not_exists(pk) AND attribute_not_exists(sk)")}},
 			{Update: &ddtypes.Update{
 				TableName:           &r.table,
 				Key:                 keyGlobal,
@@ -149,7 +148,6 @@ func (r *DynamoRepository) Delete(ctx context.Context, stackID string) (Stack, b
 				Key:                 map[string]ddtypes.AttributeValue{ddbPK: avS(stackMetaPK(st.StackID)), ddbSK: avS("META")},
 				ConditionExpression: strPtr("attribute_exists(pk) AND attribute_exists(sk)"),
 			}},
-			{Delete: &ddtypes.Delete{TableName: &r.table, Key: map[string]ddtypes.AttributeValue{ddbPK: avS("STACKS"), ddbSK: avS(stackSK(st.StackID))}}},
 			{Delete: &ddtypes.Delete{TableName: &r.table, Key: map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(st.NodePort))}}},
 			{Update: &ddtypes.Update{
 				TableName:                 &r.table,
@@ -177,11 +175,10 @@ func (r *DynamoRepository) ListAll(ctx context.Context) ([]Stack, error) {
 	for {
 		resp, err := r.client.Query(ctx, &dynamodb.QueryInput{
 			TableName:              &r.table,
-			ConsistentRead:         boolPtr(r.consistentRead),
-			KeyConditionExpression: strPtr("pk = :pk AND begins_with(sk, :prefix)"),
+			IndexName:              strPtr(ddbGSIAllName),
+			KeyConditionExpression: strPtr(ddbGSIAllPK + " = :pk"),
 			ExpressionAttributeValues: map[string]ddtypes.AttributeValue{
-				":pk":     avS("STACKS"),
-				":prefix": avS("STACK#"),
+				":pk": avS(ddbAllPKValue),
 			},
 			ExclusiveStartKey: startKey,
 		})
@@ -320,15 +317,6 @@ func (r *DynamoRepository) UsedNodePortCount(ctx context.Context) (int, error) {
 }
 
 func (r *DynamoRepository) UpdateStatus(ctx context.Context, stackID string, status Status, nodeID string) error {
-	st, ok, err := r.Get(ctx, stackID)
-	if err != nil {
-		return err
-	}
-
-	if !ok {
-		return ErrNotFound
-	}
-
 	now := nowRFC3339()
 	values := map[string]ddtypes.AttributeValue{
 		":status": avS(string(status)),
@@ -336,27 +324,22 @@ func (r *DynamoRepository) UpdateStatus(ctx context.Context, stackID string, sta
 		":now":    avS(now),
 	}
 
-	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
-		TransactItems: []ddtypes.TransactWriteItem{
-			{Update: &ddtypes.Update{
-				TableName:                 &r.table,
-				Key:                       map[string]ddtypes.AttributeValue{ddbPK: avS(stackMetaPK(st.StackID)), ddbSK: avS("META")},
-				UpdateExpression:          strPtr("SET #status = :status, node_id = :node, updated_at = :now"),
-				ExpressionAttributeNames:  map[string]string{"#status": "status"},
-				ExpressionAttributeValues: values,
-			}},
-			{Update: &ddtypes.Update{
-				TableName:                 &r.table,
-				Key:                       map[string]ddtypes.AttributeValue{ddbPK: avS("STACKS"), ddbSK: avS(stackSK(st.StackID))},
-				UpdateExpression:          strPtr("SET #status = :status, node_id = :node, updated_at = :now"),
-				ExpressionAttributeNames:  map[string]string{"#status": "status"},
-				ExpressionAttributeValues: values,
-			}},
-		},
+	_, err := r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 &r.table,
+		Key:                       map[string]ddtypes.AttributeValue{ddbPK: avS(stackMetaPK(stackID)), ddbSK: avS("META")},
+		UpdateExpression:          strPtr("SET #status = :status, node_id = :node, updated_at = :now"),
+		ConditionExpression:       strPtr("attribute_exists(pk) AND attribute_exists(sk)"),
+		ExpressionAttributeNames:  map[string]string{"#status": "status"},
+		ExpressionAttributeValues: values,
 	})
 
 	if err != nil {
-		return mapDynamoTxError(err)
+		var condErr *ddtypes.ConditionalCheckFailedException
+		if errors.As(err, &condErr) {
+			return ErrNotFound
+		}
+
+		return err
 	}
 
 	return nil
@@ -373,9 +356,9 @@ func mapDynamoTxError(err error) error {
 			continue
 		}
 		switch idx {
-		case 2:
+		case 1:
 			return ErrClusterSaturated
-		case 3:
+		case 2:
 			return ErrNoAvailableNodePort
 		}
 	}
@@ -401,6 +384,8 @@ func txConditionFailedAt(err error, index int) bool {
 func stackToItem(st Stack) map[string]ddtypes.AttributeValue {
 	item := map[string]ddtypes.AttributeValue{
 		"stack_id":               avS(st.StackID),
+		ddbGSIAllPK:              avS(ddbAllPKValue),
+		ddbGSIAllSK:              avS(st.CreatedAt.UTC().Format(time.RFC3339Nano)),
 		"pod_id":                 avS(st.PodID),
 		"namespace":              avS(st.Namespace),
 		"node_id":                avS(st.NodeID),
@@ -553,10 +538,8 @@ func stackMetaPK(stackID string) string { return "STACK#" + stackID }
 func stackSK(stackID string) string     { return "STACK#" + stackID }
 func portSK(port int) string            { return "PORT#" + strconv.Itoa(port) }
 
-func nowRFC3339() string                  { return time.Now().UTC().Format(time.RFC3339Nano) }
 func avS(v string) ddtypes.AttributeValue { return &ddtypes.AttributeValueMemberS{Value: v} }
 func avN(v string) ddtypes.AttributeValue { return &ddtypes.AttributeValueMemberN{Value: v} }
-func strPtr(v string) *string             { return &v }
 func (r *DynamoRepository) randomInt(limit int) int {
 	r.randMu.Lock()
 	defer r.randMu.Unlock()

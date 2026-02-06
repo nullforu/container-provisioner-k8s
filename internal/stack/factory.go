@@ -11,7 +11,7 @@ import (
 	"smctf/internal/config"
 )
 
-func NewRepositoryFromConfig(ctx context.Context, cfg config.StackConfig) (Repository, error) {
+func NewRepositoryFromConfig(ctx context.Context, cfg config.StackConfig) (RepositoryClientAPI, error) {
 	if cfg.UseMockRepository {
 		return NewInMemoryRepository(0), nil
 	}
@@ -47,7 +47,7 @@ func NewRepositoryFromConfig(ctx context.Context, cfg config.StackConfig) (Repos
 	), nil
 }
 
-func NewKubernetesClientFromConfig(cfg config.StackConfig) (KubernetesInterface, error) {
+func NewKubernetesClientFromConfig(cfg config.StackConfig) (KubernetesClientAPI, error) {
 	if cfg.UseMockKubernetes {
 		return NewMockKubernetesClient(0), nil
 	}

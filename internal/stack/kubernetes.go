@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"smctf/internal/config"
@@ -25,6 +26,32 @@ import (
 type KubernetesClient struct {
 	client            kubernetes.Interface
 	schedulingTimeout time.Duration
+}
+
+type KubernetesClientAPI interface {
+	CreatePodAndService(ctx context.Context, req ProvisionRequest) (ProvisionResult, error)
+	DeletePodAndService(ctx context.Context, namespace, podID, serviceName string) error
+	GetPodStatus(ctx context.Context, namespace, podID string) (Status, string, error)
+	ListPods(ctx context.Context, namespace string) ([]string, error)
+	ListServices(ctx context.Context, namespace string) ([]string, error)
+	NodeExists(ctx context.Context, nodeID string) (bool, error)
+	HasIngressNetworkPolicy(ctx context.Context, namespace string) (bool, error)
+	GetNodePublicIP(ctx context.Context, nodeID string) (*string, error)
+}
+
+type ProvisionRequest struct {
+	Namespace  string
+	StackID    string
+	PodSpecYML string
+	TargetPort int
+	NodePort   int
+}
+
+type ProvisionResult struct {
+	PodID       string
+	ServiceName string
+	NodeID      string
+	Status      Status
 }
 
 func NewKubernetesClient(cfg config.StackConfig) (*KubernetesClient, error) {
@@ -269,14 +296,7 @@ func (c *KubernetesClient) HasIngressNetworkPolicy(ctx context.Context, namespac
 	}
 
 	for _, policy := range policies.Items {
-		hasIngressType := false
-		for _, pType := range policy.Spec.PolicyTypes {
-			if pType == networkingv1.PolicyTypeIngress {
-				hasIngressType = true
-				break
-			}
-		}
-
+		hasIngressType := slices.Contains(policy.Spec.PolicyTypes, networkingv1.PolicyTypeIngress)
 		if !hasIngressType {
 			continue
 		}

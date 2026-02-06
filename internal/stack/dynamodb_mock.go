@@ -14,7 +14,7 @@ type CreateConstraints struct {
 	MaxReservedMemoryBytes int64
 }
 
-type Repository interface {
+type RepositoryClientAPI interface {
 	Create(ctx context.Context, st Stack, constraints CreateConstraints) error
 	Get(ctx context.Context, stackID string) (Stack, bool, error)
 	Delete(ctx context.Context, stackID string) (Stack, bool, error)
