@@ -7,4 +7,4 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
-  ingress: [] # only EKS cluster.
+  ingress: [] # only EKS cluster. however, access is possible when accessing the Service DNS or IP address. This is not possible with AWS VPC CNI and Netpol.

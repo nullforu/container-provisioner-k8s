@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: container-provisioner
+  namespace: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: container-provisioner
+  template:
+    metadata:
+      labels:
+        app: container-provisioner
+    spec:
+      serviceAccountName: container-provisioner
+      automountServiceAccountToken: true
+      containers:
+        - name: container-provisioner-app
+          image: 986129558966.dkr.ecr.ap-northeast-2.amazonaws.com/test:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: HTTP_ADDR
+              value: ":8081"
+            - name: DDB_USE_MOCK
+              value: "false"
+            - name: K8S_USE_MOCK
+              value: "false"
+            - name: AWS_REGION
+              value: "ap-northeast-2"
+            - name: DDB_STACK_TABLE
+              value: "smctf-stacks"
+      nodeSelector:
+        role: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: container-provisioner-service
+  namespace: backend
+spec:
+  selector:
+    app: container-provisioner
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8081
+  type: LoadBalancer
