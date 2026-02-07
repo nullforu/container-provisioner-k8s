@@ -50,7 +50,7 @@ func NewDynamoRepository(client *dynamodb.Client, table string, consistentRead b
 	}
 }
 
-func (r *DynamoRepository) Create(ctx context.Context, st Stack, constraints CreateConstraints) error {
+func (r *DynamoRepository) Create(ctx context.Context, st Stack) error {
 	now := nowRFC3339()
 	base := stackToItem(st)
 
@@ -59,31 +59,11 @@ func (r *DynamoRepository) Create(ctx context.Context, st Stack, constraints Cre
 	byID[ddbSK] = avS("META")
 	byID["item_type"] = avS("stack_by_id")
 
-	keyGlobal := map[string]ddtypes.AttributeValue{ddbPK: avS("GLOBAL"), ddbSK: avS("RESOURCES")}
 	keyPort := map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(st.NodePort))}
-	cpuBefore := constraints.MaxReservedCPUMilli - st.RequestedMilli
-	memBefore := constraints.MaxReservedMemoryBytes - st.RequestedBytes
-	if cpuBefore <= 0 || memBefore <= 0 {
-		return ErrClusterSaturated
-	}
 
 	_, err := r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
 		TransactItems: []ddtypes.TransactWriteItem{
 			{Put: &ddtypes.Put{TableName: &r.table, Item: byID, ConditionExpression: strPtr("attribute_not_exists(pk) AND attribute_not_exists(sk)")}},
-			{Update: &ddtypes.Update{
-				TableName:           &r.table,
-				Key:                 keyGlobal,
-				UpdateExpression:    strPtr("SET reserved_cpu_milli = if_not_exists(reserved_cpu_milli, :zero) + :cpu, reserved_memory_bytes = if_not_exists(reserved_memory_bytes, :zero) + :mem, updated_at = :now"),
-				ConditionExpression: strPtr("(attribute_not_exists(reserved_cpu_milli) OR reserved_cpu_milli < :cpu_before) AND (attribute_not_exists(reserved_memory_bytes) OR reserved_memory_bytes < :mem_before)"),
-				ExpressionAttributeValues: map[string]ddtypes.AttributeValue{
-					":zero":       avN("0"),
-					":cpu":        avN(strconv.FormatInt(st.RequestedMilli, 10)),
-					":mem":        avN(strconv.FormatInt(st.RequestedBytes, 10)),
-					":cpu_before": avN(strconv.FormatInt(cpuBefore, 10)),
-					":mem_before": avN(strconv.FormatInt(memBefore, 10)),
-					":now":        avS(now),
-				},
-			}},
 			{Update: &ddtypes.Update{
 				TableName:                 &r.table,
 				Key:                       keyPort,
@@ -137,10 +117,6 @@ func (r *DynamoRepository) Delete(ctx context.Context, stackID string) (Stack, b
 		return Stack{}, false, nil
 	}
 
-	now := nowRFC3339()
-	negCPU := -st.RequestedMilli
-	negMem := -st.RequestedBytes
-
 	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
 		TransactItems: []ddtypes.TransactWriteItem{
 			{Delete: &ddtypes.Delete{
@@ -149,13 +125,6 @@ func (r *DynamoRepository) Delete(ctx context.Context, stackID string) (Stack, b
 				ConditionExpression: strPtr("attribute_exists(pk) AND attribute_exists(sk)"),
 			}},
 			{Delete: &ddtypes.Delete{TableName: &r.table, Key: map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(st.NodePort))}}},
-			{Update: &ddtypes.Update{
-				TableName:                 &r.table,
-				Key:                       map[string]ddtypes.AttributeValue{ddbPK: avS("GLOBAL"), ddbSK: avS("RESOURCES")},
-				UpdateExpression:          strPtr("SET reserved_cpu_milli = if_not_exists(reserved_cpu_milli, :zero) + :cpu, reserved_memory_bytes = if_not_exists(reserved_memory_bytes, :zero) + :mem, updated_at = :now"),
-				ConditionExpression:       strPtr("attribute_exists(reserved_cpu_milli) AND attribute_exists(reserved_memory_bytes) AND reserved_cpu_milli >= :cpu_abs AND reserved_memory_bytes >= :mem_abs"),
-				ExpressionAttributeValues: map[string]ddtypes.AttributeValue{":zero": avN("0"), ":cpu": avN(strconv.FormatInt(negCPU, 10)), ":mem": avN(strconv.FormatInt(negMem, 10)), ":cpu_abs": avN(strconv.FormatInt(st.RequestedMilli, 10)), ":mem_abs": avN(strconv.FormatInt(st.RequestedBytes, 10)), ":now": avS(now)},
-			}},
 		},
 	})
 
@@ -357,8 +326,6 @@ func mapDynamoTxError(err error) error {
 		}
 		switch idx {
 		case 1:
-			return ErrClusterSaturated
-		case 2:
 			return ErrNoAvailableNodePort
 		}
 	}

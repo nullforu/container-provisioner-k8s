@@ -91,11 +91,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Stack, error) {
 	}
 	st.NodePublicIP = nodePublicIP
 
-	constraints := CreateConstraints{
-		MaxReservedCPUMilli:    int64(float64(s.cfg.ClusterTotalCPUMilli) * (1 - s.cfg.ResourceReserveRatio)),
-		MaxReservedMemoryBytes: int64(float64(s.cfg.ClusterTotalMemoryBytes) * (1 - s.cfg.ResourceReserveRatio)),
-	}
-	if err := s.repo.Create(ctx, st, constraints); err != nil {
+	if err := s.repo.Create(ctx, st); err != nil {
 		if k8sErr := s.k8s.DeletePodAndService(context.Background(), st.Namespace, st.PodID, st.ServiceName); k8sErr != nil {
 			log.Printf("level=ERROR msg=\"rollback delete pod/service failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, k8sErr.Error())
 		}

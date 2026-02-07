@@ -1,0 +1,28 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: eks-smctf-dev-cluster
+  region: ap-northeast-2
+  version: "1.34"
+iam:
+  withOIDC: true
+vpc:
+  nat:
+    gateway: Single
+managedNodeGroups:
+  - name: backend-ng
+    instanceType: t3.medium
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    privateNetworking: true
+    labels:
+      role: backend
+  - name: stack-ng
+    instanceType: t3.small
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+    privateNetworking: false
+    labels:
+      role: stack

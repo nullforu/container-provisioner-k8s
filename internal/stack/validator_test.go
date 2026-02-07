@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidatorRejectsHostNetwork(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	_, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod
@@ -35,7 +35,7 @@ spec:
 }
 
 func TestValidatorNormalizesResourcesAndHardensWithoutNonRoot(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	res, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod
@@ -81,7 +81,7 @@ spec:
 }
 
 func TestValidatorRejectsContainerSecurityContext(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	_, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod
@@ -109,7 +109,7 @@ spec:
 }
 
 func TestValidatorRejectsHostPathVolume(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	_, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod
@@ -142,7 +142,7 @@ spec:
 }
 
 func TestValidatorRejectsProjectedServiceAccountToken(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	_, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod
@@ -178,7 +178,7 @@ spec:
 }
 
 func TestValidatorRejectsHostPort(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	_, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod
@@ -205,7 +205,7 @@ spec:
 }
 
 func TestValidatorCountsInitContainerResources(t *testing.T) {
-	v := NewValidator(config.StackConfig{MaxCPUPerStackMilli: 2000, MaxMemoryPerStackBytes: 512 * 1024 * 1024})
+	v := NewValidator(config.StackConfig{})
 	res, err := v.ValidatePodSpec(`
 apiVersion: v1
 kind: Pod

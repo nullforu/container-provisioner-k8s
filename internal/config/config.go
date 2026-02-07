@@ -34,17 +34,12 @@ type LoggingConfig struct {
 }
 
 type StackConfig struct {
-	Namespace               string
-	StackTTL                time.Duration
-	SchedulerInterval       time.Duration
-	NodePortMin             int
-	NodePortMax             int
-	PortLockTTL             time.Duration
-	ResourceReserveRatio    float64
-	MaxCPUPerStackMilli     int64
-	MaxMemoryPerStackBytes  int64
-	ClusterTotalCPUMilli    int64
-	ClusterTotalMemoryBytes int64
+	Namespace         string
+	StackTTL          time.Duration
+	SchedulerInterval time.Duration
+	NodePortMin       int
+	NodePortMax       int
+	PortLockTTL       time.Duration
 
 	DynamoTableName      string
 	AWSRegion            string
@@ -127,31 +122,7 @@ func Load() (Config, error) {
 		errs = append(errs, err)
 	}
 
-	reserveRatio, err := getEnvFloat64("STACK_RESOURCE_RESERVE_RATIO", 0.20)
-	if err != nil {
-		errs = append(errs, err)
-	}
 	portLockTTL, err := getDuration("STACK_PORT_LOCK_TTL", 30*time.Second)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	maxCPUPerStackMilli, err := getEnvCPUMilli("STACK_MAX_CPU", "2")
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	maxMemoryPerStackBytes, err := getEnvBytes("STACK_MAX_MEMORY", "512Mi")
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	clusterTotalCPUMilli, err := getEnvCPUMilli("CLUSTER_TOTAL_CPU", "100")
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	clusterTotalMemoryBytes, err := getEnvBytes("CLUSTER_TOTAL_MEMORY", "64Gi")
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -207,29 +178,24 @@ func Load() (Config, error) {
 			WebhookMaxChars:   logWebhookMaxChars,
 		},
 		Stack: StackConfig{
-			Namespace:               getEnv("STACK_NAMESPACE", "stacks"),
-			StackTTL:                stackTTL,
-			SchedulerInterval:       schedulerInterval,
-			NodePortMin:             nodePortMin,
-			NodePortMax:             nodePortMax,
-			PortLockTTL:             portLockTTL,
-			ResourceReserveRatio:    reserveRatio,
-			MaxCPUPerStackMilli:     maxCPUPerStackMilli,
-			MaxMemoryPerStackBytes:  maxMemoryPerStackBytes,
-			ClusterTotalCPUMilli:    clusterTotalCPUMilli,
-			ClusterTotalMemoryBytes: clusterTotalMemoryBytes,
-			DynamoTableName:         getEnv("DDB_STACK_TABLE", "smctf-stacks"),
-			AWSRegion:               getEnv("AWS_REGION", "us-east-1"),
-			AWSEndpoint:             getEnv("AWS_ENDPOINT", ""),
-			DynamoConsistentRead:    dynamoConsistentRead,
-			UseMockRepository:       useMockRepo,
-			KubeConfigPath:          getEnv("K8S_KUBECONFIG", ""),
-			KubeContext:             getEnv("K8S_CONTEXT", ""),
-			K8sQPS:                  k8sQPS,
-			K8sBurst:                k8sBurst,
-			SchedulingTimeout:       schedulingTimeout,
-			UseMockKubernetes:       useMockK8s,
-			RequireIngressNP:        requireIngressNP,
+			Namespace:            getEnv("STACK_NAMESPACE", "stacks"),
+			StackTTL:             stackTTL,
+			SchedulerInterval:    schedulerInterval,
+			NodePortMin:          nodePortMin,
+			NodePortMax:          nodePortMax,
+			PortLockTTL:          portLockTTL,
+			DynamoTableName:      getEnv("DDB_STACK_TABLE", "smctf-stacks"),
+			AWSRegion:            getEnv("AWS_REGION", "us-east-1"),
+			AWSEndpoint:          getEnv("AWS_ENDPOINT", ""),
+			DynamoConsistentRead: dynamoConsistentRead,
+			UseMockRepository:    useMockRepo,
+			KubeConfigPath:       getEnv("K8S_KUBECONFIG", ""),
+			KubeContext:          getEnv("K8S_CONTEXT", ""),
+			K8sQPS:               k8sQPS,
+			K8sBurst:             k8sBurst,
+			SchedulingTimeout:    schedulingTimeout,
+			UseMockKubernetes:    useMockK8s,
+			RequireIngressNP:     requireIngressNP,
 		},
 	}
 
@@ -392,23 +358,8 @@ func validateConfig(cfg Config) error {
 		errs = append(errs, errors.New("STACK_NODEPORT range is invalid"))
 	}
 
-	if cfg.Stack.ResourceReserveRatio < 0 || cfg.Stack.ResourceReserveRatio >= 1 {
-		errs = append(errs, errors.New("STACK_RESOURCE_RESERVE_RATIO must be in [0, 1)"))
-	}
 	if cfg.Stack.PortLockTTL <= 0 {
 		errs = append(errs, errors.New("STACK_PORT_LOCK_TTL must be positive"))
-	}
-
-	if cfg.Stack.MaxCPUPerStackMilli <= 0 {
-		errs = append(errs, errors.New("STACK_MAX_CPU must be positive"))
-	}
-
-	if cfg.Stack.MaxMemoryPerStackBytes <= 0 {
-		errs = append(errs, errors.New("STACK_MAX_MEMORY must be positive"))
-	}
-
-	if cfg.Stack.ClusterTotalCPUMilli <= 0 || cfg.Stack.ClusterTotalMemoryBytes <= 0 {
-		errs = append(errs, errors.New("cluster total resources must be positive"))
 	}
 
 	if cfg.Stack.K8sQPS <= 0 {
@@ -488,11 +439,6 @@ func FormatForLog(cfg Config) string {
 	fmt.Fprintf(&b, "  SchedulerInterval=%s\n", cfg.Stack.SchedulerInterval)
 	fmt.Fprintf(&b, "  NodePortRange=%d-%d\n", cfg.Stack.NodePortMin, cfg.Stack.NodePortMax)
 	fmt.Fprintf(&b, "  PortLockTTL=%s\n", cfg.Stack.PortLockTTL)
-	fmt.Fprintf(&b, "  ResourceReserveRatio=%.2f\n", cfg.Stack.ResourceReserveRatio)
-	fmt.Fprintf(&b, "  MaxCPUPerStackMilli=%d\n", cfg.Stack.MaxCPUPerStackMilli)
-	fmt.Fprintf(&b, "  MaxMemoryPerStackBytes=%d\n", cfg.Stack.MaxMemoryPerStackBytes)
-	fmt.Fprintf(&b, "  ClusterTotalCPUMilli=%d\n", cfg.Stack.ClusterTotalCPUMilli)
-	fmt.Fprintf(&b, "  ClusterTotalMemoryBytes=%d\n", cfg.Stack.ClusterTotalMemoryBytes)
 	fmt.Fprintf(&b, "  DynamoTableName=%s\n", cfg.Stack.DynamoTableName)
 	fmt.Fprintf(&b, "  AWSRegion=%s\n", cfg.Stack.AWSRegion)
 	fmt.Fprintf(&b, "  AWSEndpoint=%s\n", cfg.Stack.AWSEndpoint)

@@ -13,16 +13,11 @@ func TestServiceCreateAndDelete(t *testing.T) {
 	repo := NewInMemoryRepository(1)
 	k8s := NewMockKubernetesClient(1)
 	svc := NewService(config.StackConfig{
-		Namespace:               "stacks",
-		StackTTL:                time.Hour,
-		SchedulerInterval:       time.Second,
-		NodePortMin:             30000,
-		NodePortMax:             30010,
-		ResourceReserveRatio:    0.2,
-		MaxCPUPerStackMilli:     2000,
-		MaxMemoryPerStackBytes:  512 * 1024 * 1024,
-		ClusterTotalCPUMilli:    10000,
-		ClusterTotalMemoryBytes: 8 * 1024 * 1024 * 1024,
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
 	}, repo, k8s)
 
 	st, err := svc.Create(context.Background(), CreateInput{
@@ -74,16 +69,11 @@ func TestCleanupRemovesOnlyPodsMissingFromRepository(t *testing.T) {
 	repo := NewInMemoryRepository(1)
 	k8s := NewMockKubernetesClient(1)
 	svc := NewService(config.StackConfig{
-		Namespace:               "stacks",
-		StackTTL:                time.Hour,
-		SchedulerInterval:       time.Second,
-		NodePortMin:             30000,
-		NodePortMax:             30010,
-		ResourceReserveRatio:    0.2,
-		MaxCPUPerStackMilli:     2000,
-		MaxMemoryPerStackBytes:  512 * 1024 * 1024,
-		ClusterTotalCPUMilli:    10000,
-		ClusterTotalMemoryBytes: 8 * 1024 * 1024 * 1024,
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
 	}, repo, k8s)
 
 	st, err := svc.Create(context.Background(), CreateInput{
@@ -166,16 +156,11 @@ func TestCleanupDeletesStackWhenServiceIsMissing(t *testing.T) {
 	repo := NewInMemoryRepository(1)
 	k8s := NewMockKubernetesClient(1)
 	svc := NewService(config.StackConfig{
-		Namespace:               "stacks",
-		StackTTL:                time.Hour,
-		SchedulerInterval:       time.Second,
-		NodePortMin:             30000,
-		NodePortMax:             30010,
-		ResourceReserveRatio:    0.2,
-		MaxCPUPerStackMilli:     2000,
-		MaxMemoryPerStackBytes:  512 * 1024 * 1024,
-		ClusterTotalCPUMilli:    10000,
-		ClusterTotalMemoryBytes: 8 * 1024 * 1024 * 1024,
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
 	}, repo, k8s)
 
 	st, err := svc.Create(context.Background(), CreateInput{
@@ -216,16 +201,11 @@ func TestCleanupDeletesStackWhenPodIsMissing(t *testing.T) {
 	repo := NewInMemoryRepository(1)
 	k8s := NewMockKubernetesClient(1)
 	svc := NewService(config.StackConfig{
-		Namespace:               "stacks",
-		StackTTL:                time.Hour,
-		SchedulerInterval:       time.Second,
-		NodePortMin:             30000,
-		NodePortMax:             30010,
-		ResourceReserveRatio:    0.2,
-		MaxCPUPerStackMilli:     2000,
-		MaxMemoryPerStackBytes:  512 * 1024 * 1024,
-		ClusterTotalCPUMilli:    10000,
-		ClusterTotalMemoryBytes: 8 * 1024 * 1024 * 1024,
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
 	}, repo, k8s)
 
 	st, err := svc.Create(context.Background(), CreateInput{
@@ -296,90 +276,4 @@ func (f *failingKubernetesClient) HasIngressNetworkPolicy(_ context.Context, _ s
 
 func (f *failingKubernetesClient) GetNodePublicIP(_ context.Context, _ string) (*string, error) {
 	return nil, nil
-}
-
-func TestCreateMapsResourceQuotaErrorToClusterSaturated(t *testing.T) {
-	repo := NewInMemoryRepository(1)
-	k8s := &failingKubernetesClient{
-		createErr: errors.New(`create pod: pods "stack-1" is forbidden: exceeded quota: stack-quota, requested: limits.memory=128Mi,requests.memory=128Mi, used: limits.memory=1Gi,requests.memory=1Gi, limited: limits.memory=1Gi,requests.memory=1Gi`),
-	}
-	svc := NewService(config.StackConfig{
-		Namespace:               "stacks",
-		StackTTL:                time.Hour,
-		SchedulerInterval:       time.Second,
-		NodePortMin:             30000,
-		NodePortMax:             30010,
-		ResourceReserveRatio:    0,
-		MaxCPUPerStackMilli:     2000,
-		MaxMemoryPerStackBytes:  512 * 1024 * 1024,
-		ClusterTotalCPUMilli:    10000,
-		ClusterTotalMemoryBytes: 8 * 1024 * 1024 * 1024,
-	}, repo, k8s)
-
-	_, err := svc.Create(context.Background(), CreateInput{
-		TargetPort: 5000,
-		PodSpecYML: `
-apiVersion: v1
-kind: Pod
-metadata:
-  name: p
-spec:
-  containers:
-    - name: app
-      image: nginx:latest
-      ports:
-        - containerPort: 5000
-      resources:
-        limits:
-          cpu: "100m"
-          memory: "64Mi"
-`,
-	})
-
-	if !errors.Is(err, ErrClusterSaturated) {
-		t.Fatalf("expected ErrClusterSaturated, got: %v", err)
-	}
-}
-
-func TestCreateMapsLimitRangeErrorToPodSpecInvalid(t *testing.T) {
-	repo := NewInMemoryRepository(1)
-	k8s := &failingKubernetesClient{
-		createErr: errors.New(`create pod: pods "stack-2" is forbidden: maximum memory usage per Container is 64Mi, but limit is 32Mi`),
-	}
-	svc := NewService(config.StackConfig{
-		Namespace:               "stacks",
-		StackTTL:                time.Hour,
-		SchedulerInterval:       time.Second,
-		NodePortMin:             30000,
-		NodePortMax:             30010,
-		ResourceReserveRatio:    0,
-		MaxCPUPerStackMilli:     2000,
-		MaxMemoryPerStackBytes:  512 * 1024 * 1024 * 1024,
-		ClusterTotalCPUMilli:    10000,
-		ClusterTotalMemoryBytes: 8 * 1024 * 1024 * 1024,
-	}, repo, k8s)
-
-	_, err := svc.Create(context.Background(), CreateInput{
-		TargetPort: 5000,
-		PodSpecYML: `
-apiVersion: v1
-kind: Pod
-metadata:
-  name: p
-spec:
-  containers:
-    - name: app
-      image: nginx:latest
-      ports:
-        - containerPort: 5000
-      resources:
-        limits:
-          cpu: "100m"
-          memory: "64Mi"
-`,
-	})
-
-	if !errors.Is(err, ErrPodSpecInvalid) {
-		t.Fatalf("expected ErrPodSpecInvalid, got: %v", err)
-	}
 }

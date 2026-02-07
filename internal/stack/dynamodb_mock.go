@@ -9,13 +9,8 @@ import (
 	"time"
 )
 
-type CreateConstraints struct {
-	MaxReservedCPUMilli    int64
-	MaxReservedMemoryBytes int64
-}
-
 type RepositoryClientAPI interface {
-	Create(ctx context.Context, st Stack, constraints CreateConstraints) error
+	Create(ctx context.Context, st Stack) error
 	Get(ctx context.Context, stackID string) (Stack, bool, error)
 	Delete(ctx context.Context, stackID string) (Stack, bool, error)
 	ListAll(ctx context.Context) ([]Stack, error)
@@ -26,12 +21,10 @@ type RepositoryClientAPI interface {
 }
 
 type InMemoryRepository struct {
-	mu             sync.RWMutex
-	stacks         map[string]Stack
-	ports          map[int]string
-	reservedCPU    int64
-	reservedMemory int64
-	rand           *rand.Rand
+	mu     sync.RWMutex
+	stacks map[string]Stack
+	ports  map[int]string
+	rand   *rand.Rand
 }
 
 func NewInMemoryRepository(seed int64) *InMemoryRepository {
@@ -46,7 +39,7 @@ func NewInMemoryRepository(seed int64) *InMemoryRepository {
 	}
 }
 
-func (r *InMemoryRepository) Create(_ context.Context, st Stack, constraints CreateConstraints) error {
+func (r *InMemoryRepository) Create(_ context.Context, st Stack) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -58,17 +51,8 @@ func (r *InMemoryRepository) Create(_ context.Context, st Stack, constraints Cre
 		return ErrNoAvailableNodePort
 	}
 
-	if constraints.MaxReservedCPUMilli > 0 && r.reservedCPU+st.RequestedMilli >= constraints.MaxReservedCPUMilli {
-		return ErrClusterSaturated
-	}
-	if constraints.MaxReservedMemoryBytes > 0 && r.reservedMemory+st.RequestedBytes >= constraints.MaxReservedMemoryBytes {
-		return ErrClusterSaturated
-	}
-
 	r.stacks[st.StackID] = st
 	r.ports[st.NodePort] = st.StackID
-	r.reservedCPU += st.RequestedMilli
-	r.reservedMemory += st.RequestedBytes
 
 	return nil
 }
@@ -92,14 +76,6 @@ func (r *InMemoryRepository) Delete(_ context.Context, stackID string) (Stack, b
 
 	delete(r.stacks, stackID)
 	delete(r.ports, st.NodePort)
-
-	if r.reservedCPU >= st.RequestedMilli {
-		r.reservedCPU -= st.RequestedMilli
-	}
-
-	if r.reservedMemory >= st.RequestedBytes {
-		r.reservedMemory -= st.RequestedBytes
-	}
 
 	return st, true, nil
 }
