@@ -277,3 +277,7 @@ func (f *failingKubernetesClient) HasIngressNetworkPolicy(_ context.Context, _ s
 func (f *failingKubernetesClient) GetNodePublicIP(_ context.Context, _ string) (*string, error) {
 	return nil, nil
 }
+
+func (f *failingKubernetesClient) CountSchedulableNodes(_ context.Context) (int, error) {
+	return 0, nil
+}

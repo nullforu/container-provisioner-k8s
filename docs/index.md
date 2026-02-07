@@ -72,10 +72,10 @@ Base URL: `http://localhost:8081`
 ## Error codes
 
 - `400`: invalid request body / pod spec validation error
-- `400`: Kubernetes `LimitRange` 초과 (예: 컨테이너별 최대/최소 리소스 위반)
+- `400`: Kubernetes `LimitRange` violation
 - `404`: stack not found
 - `503`: cluster saturation, no available nodeport
-- `503`: Kubernetes `ResourceQuota` 초과
+- `503`: Kubernetes `ResourceQuota` violation
 - `500`: internal server error
 
 ## Validation and safety rules
@@ -101,6 +101,7 @@ Base URL: `http://localhost:8081`
 - `STACK_TTL`
 - `STACK_SCHEDULER_INTERVAL`
 - `STACK_NODEPORT_MIN`, `STACK_NODEPORT_MAX`
+- `STACK_NODE_ROLE`
 - `STACK_PORT_LOCK_TTL`
 - `STACK_RESOURCE_RESERVE_RATIO`
 - `STACK_SCHEDULING_TIMEOUT`

@@ -171,6 +171,20 @@ func (m *MockKubernetesClient) GetNodePublicIP(_ context.Context, nodeID string)
 	return ip, nil
 }
 
+func (m *MockKubernetesClient) CountSchedulableNodes(_ context.Context) (int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	count := 0
+	for _, alive := range m.nodes {
+		if alive {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
 func (m *MockKubernetesClient) pickNodeLocked() (string, error) {
 	healthy := make([]string, 0)
 	for id, alive := range m.nodes {
