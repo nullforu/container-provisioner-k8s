@@ -153,10 +153,6 @@ func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResul
 		return ValidationResult{}, fmt.Errorf("%w: resources are required", ErrPodSpecInvalid)
 	}
 
-	if reqMilli > v.cfg.MaxCPUPerStackMilli || reqBytes > v.cfg.MaxMemoryPerStackBytes {
-		return ValidationResult{}, fmt.Errorf("%w: resource limit exceeded", ErrPodSpecInvalid)
-	}
-
 	pod.Spec.RestartPolicy = corev1.RestartPolicyNever
 	pod.Spec.AutomountServiceAccountToken = boolPtr(false)
 	pod.Spec.EnableServiceLinks = boolPtr(false)
@@ -237,10 +233,6 @@ func normalizeAndValidateResources(r corev1.ResourceRequirements, cfg config.Sta
 	memBytes := max64(memReq, memLim)
 	if cpuMilli <= 0 || memBytes <= 0 {
 		return 0, 0, fmt.Errorf("%w: request/limit must be set", ErrPodSpecInvalid)
-	}
-
-	if cpuMilli > cfg.MaxCPUPerStackMilli || memBytes > cfg.MaxMemoryPerStackBytes {
-		return 0, 0, fmt.Errorf("%w: per stack max exceeded", ErrPodSpecInvalid)
 	}
 
 	return cpuMilli, memBytes, nil
