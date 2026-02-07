@@ -26,6 +26,7 @@ import (
 type KubernetesClient struct {
 	client            kubernetes.Interface
 	schedulingTimeout time.Duration
+	stackNodeRole     string
 }
 
 type KubernetesClientAPI interface {
@@ -37,6 +38,7 @@ type KubernetesClientAPI interface {
 	NodeExists(ctx context.Context, nodeID string) (bool, error)
 	HasIngressNetworkPolicy(ctx context.Context, namespace string) (bool, error)
 	GetNodePublicIP(ctx context.Context, nodeID string) (*string, error)
+	CountSchedulableNodes(ctx context.Context) (int, error)
 }
 
 type ProvisionRequest struct {
@@ -70,6 +72,7 @@ func NewKubernetesClient(cfg config.StackConfig) (*KubernetesClient, error) {
 	return &KubernetesClient{
 		client:            client,
 		schedulingTimeout: cfg.SchedulingTimeout,
+		stackNodeRole:     cfg.StackNodeRole,
 	}, nil
 }
 
@@ -131,6 +134,12 @@ func (c *KubernetesClient) CreatePodAndService(ctx context.Context, req Provisio
 		Labels:      labels,
 		Annotations: pod.Annotations,
 	}
+
+	if pod.Spec.NodeSelector == nil {
+		pod.Spec.NodeSelector = map[string]string{}
+	}
+
+	pod.Spec.NodeSelector["role"] = c.stackNodeRole
 
 	createdPod, err := c.client.CoreV1().Pods(req.Namespace).Create(ctx, &pod, metav1.CreateOptions{})
 	if err != nil {
@@ -330,6 +339,33 @@ func (c *KubernetesClient) GetNodePublicIP(ctx context.Context, nodeID string) (
 	return nil, nil
 }
 
+func (c *KubernetesClient) CountSchedulableNodes(ctx context.Context) (int, error) {
+	selector := ""
+	if c.stackNodeRole != "" {
+		selector = fmt.Sprintf("role=%s", c.stackNodeRole)
+	}
+
+	nodes, err := c.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return 0, fmt.Errorf("list nodes: %w", err)
+	}
+
+	count := 0
+	for _, node := range nodes.Items {
+		if node.Spec.Unschedulable {
+			continue
+		}
+
+		if !isNodeReady(node.Status.Conditions) {
+			continue
+		}
+
+		count++
+	}
+
+	return count, nil
+}
+
 func (c *KubernetesClient) ensureNamespace(ctx context.Context, ns string) error {
 	_, err := c.client.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{})
 	if err == nil {
@@ -361,6 +397,18 @@ func mapPodPhaseToStatus(phase corev1.PodPhase) Status {
 	default:
 		return StatusCreating
 	}
+}
+
+func isNodeReady(conditions []corev1.NodeCondition) bool {
+	for _, cond := range conditions {
+		if cond.Type != corev1.NodeReady {
+			continue
+		}
+
+		return cond.Status == corev1.ConditionTrue
+	}
+
+	return false
 }
 
 func (c *KubernetesClient) waitUntilSchedulable(ctx context.Context, namespace, podName string) error {

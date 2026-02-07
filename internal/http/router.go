@@ -47,6 +47,12 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 		}
 	}
 
+	if count, err := k8s.CountSchedulableNodes(ctx); err != nil {
+		fmt.Printf("level=WARN msg=\"count schedulable nodes failed\" err=%q\n", err.Error())
+	} else {
+		fmt.Printf("level=INFO msg=\"schedulable nodes detected\" count=%d role=%s\n", count, cfg.Stack.StackNodeRole)
+	}
+
 	service := stack.NewService(cfg.Stack, repo, k8s)
 	scheduler := stack.NewScheduler(cfg.Stack.SchedulerInterval, service)
 	go scheduler.Run(ctx)

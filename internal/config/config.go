@@ -54,6 +54,7 @@ type StackConfig struct {
 	SchedulingTimeout time.Duration
 	UseMockKubernetes bool
 	RequireIngressNP  bool
+	StackNodeRole     string
 }
 
 func Load() (Config, error) {
@@ -160,6 +161,7 @@ func Load() (Config, error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
+	stackNodeRole := getEnv("STACK_NODE_ROLE", "stack")
 
 	cfg := Config{
 		AppEnv:          appEnv,
@@ -196,6 +198,7 @@ func Load() (Config, error) {
 			SchedulingTimeout:    schedulingTimeout,
 			UseMockKubernetes:    useMockK8s,
 			RequireIngressNP:     requireIngressNP,
+			StackNodeRole:        stackNodeRole,
 		},
 	}
 
@@ -378,6 +381,10 @@ func validateConfig(cfg Config) error {
 		errs = append(errs, errors.New("STACK_REQUIRE_INGRESS_NETWORK_POLICY requires STACK_NAMESPACE"))
 	}
 
+	if cfg.Stack.StackNodeRole == "" {
+		errs = append(errs, errors.New("STACK_NODE_ROLE must not be empty"))
+	}
+
 	if !cfg.Stack.UseMockRepository && cfg.Stack.DynamoTableName == "" {
 		errs = append(errs, errors.New("DDB_STACK_TABLE must not be empty when DDB_USE_MOCK=false"))
 	}
@@ -451,6 +458,7 @@ func FormatForLog(cfg Config) string {
 	fmt.Fprintf(&b, "  SchedulingTimeout=%s\n", cfg.Stack.SchedulingTimeout)
 	fmt.Fprintf(&b, "  UseMockKubernetes=%t\n", cfg.Stack.UseMockKubernetes)
 	fmt.Fprintf(&b, "  RequireIngressNetworkPolicy=%t\n", cfg.Stack.RequireIngressNP)
+	fmt.Fprintf(&b, "  StackNodeRole=%s\n", cfg.Stack.StackNodeRole)
 
 	return b.String()
 }
