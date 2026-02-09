@@ -113,7 +113,7 @@ func Load() (Config, error) {
 		errs = append(errs, err)
 	}
 
-	nodePortMin, err := getEnvInt("STACK_NODEPORT_MIN", 30000)
+	nodePortMin, err := getEnvInt("STACK_NODEPORT_MIN", 31001)
 	if err != nil {
 		errs = append(errs, err)
 	}

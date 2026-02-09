@@ -156,7 +156,7 @@ func (m *MockKubernetesClient) NodeExists(_ context.Context, nodeID string) (boo
 	return m.nodes[nodeID], nil
 }
 
-func (m *MockKubernetesClient) HasIngressNetworkPolicy(_ context.Context, _ string) (bool, error) {
+func (m *MockKubernetesClient) HasIngressNetworkPolicy(_ context.Context) (bool, error) {
 	return true, nil
 }
 

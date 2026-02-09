@@ -37,13 +37,13 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 	}
 
 	if cfg.Stack.RequireIngressNP {
-		ok, err := k8s.HasIngressNetworkPolicy(ctx, cfg.Stack.Namespace)
+		ok, err := k8s.HasIngressNetworkPolicy(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("check ingress networkpolicy: %w", err)
 		}
 
 		if !ok {
-			return nil, fmt.Errorf("missing ingress networkpolicy in namespace %q", cfg.Stack.Namespace)
+			return nil, fmt.Errorf("missing ingress networkpolicy")
 		}
 	}
 

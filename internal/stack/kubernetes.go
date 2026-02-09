@@ -36,7 +36,7 @@ type KubernetesClientAPI interface {
 	ListPods(ctx context.Context, namespace string) ([]string, error)
 	ListServices(ctx context.Context, namespace string) ([]string, error)
 	NodeExists(ctx context.Context, nodeID string) (bool, error)
-	HasIngressNetworkPolicy(ctx context.Context, namespace string) (bool, error)
+	HasIngressNetworkPolicy(ctx context.Context) (bool, error)
 	GetNodePublicIP(ctx context.Context, nodeID string) (*string, error)
 	CountSchedulableNodes(ctx context.Context) (int, error)
 }
@@ -294,12 +294,8 @@ func (c *KubernetesClient) NodeExists(ctx context.Context, nodeID string) (bool,
 	return false, err
 }
 
-func (c *KubernetesClient) HasIngressNetworkPolicy(ctx context.Context, namespace string) (bool, error) {
-	if namespace == "" {
-		return false, nil
-	}
-
-	policies, err := c.client.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{})
+func (c *KubernetesClient) HasIngressNetworkPolicy(ctx context.Context) (bool, error) {
+	policies, err := c.client.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return false, fmt.Errorf("list networkpolicies: %w", err)
 	}
