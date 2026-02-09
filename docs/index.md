@@ -7,6 +7,18 @@ nav_order: 1
 
 Base URL: `http://localhost:8081`
 
+## Authentication
+
+All endpoints require an API key when API key auth is enabled (default). You can provide it via:
+
+- `X-API-KEY` header
+- `api_key` query parameter
+
+```bash
+curl -H "X-API-KEY: <your-api-key>" http://localhost:8081/healthz
+curl "http://localhost:8081/healthz?api_key=<your-api-key>"
+```
+
 ## Health
 
 - `GET /healthz`
@@ -98,6 +110,8 @@ Base URL: `http://localhost:8081`
 
 ## Key Environment Variables
 
+- `API_KEY_ENABLED`
+- `API_KEY`
 - `STACK_TTL`
 - `STACK_SCHEDULER_INTERVAL`
 - `STACK_NODEPORT_MIN`, `STACK_NODEPORT_MAX`

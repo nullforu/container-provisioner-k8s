@@ -1,6 +1,7 @@
 package http
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,10 @@ func attachFrontendRoutes(r *gin.Engine) {
 	if staticDir == "" || indexPath == "" {
 		return
 	}
+
+	r.GET("/dashboard", func(ctx *gin.Context) {
+		ctx.Redirect(http.StatusMovedPermanently, "/dashboard/")
+	})
 
 	r.GET("/dashboard/*path", func(ctx *gin.Context) {
 		reqPath := ctx.Param("path")

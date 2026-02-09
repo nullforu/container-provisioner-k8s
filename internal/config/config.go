@@ -17,6 +17,7 @@ type Config struct {
 	ShutdownTimeout time.Duration
 
 	Logging LoggingConfig
+	APIKey  APIKeyConfig
 	Stack   StackConfig
 }
 
@@ -31,6 +32,11 @@ type LoggingConfig struct {
 	WebhookBatchSize  int
 	WebhookBatchWait  time.Duration
 	WebhookMaxChars   int
+}
+
+type APIKeyConfig struct {
+	Enabled bool
+	Value   string
 }
 
 type StackConfig struct {
@@ -102,6 +108,13 @@ func Load() (Config, error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
+
+	apiKeyEnabled, err := getEnvBool("API_KEY_ENABLED", true)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	apiKeyValue := getEnv("API_KEY", "")
 
 	stackTTL, err := getDuration("STACK_TTL", 2*time.Hour)
 	if err != nil {
@@ -178,6 +191,10 @@ func Load() (Config, error) {
 			WebhookBatchSize:  logWebhookBatchSize,
 			WebhookBatchWait:  logWebhookBatchWait,
 			WebhookMaxChars:   logWebhookMaxChars,
+		},
+		APIKey: APIKeyConfig{
+			Enabled: apiKeyEnabled,
+			Value:   apiKeyValue,
 		},
 		Stack: StackConfig{
 			Namespace:            getEnv("STACK_NAMESPACE", "stacks"),
@@ -343,6 +360,10 @@ func validateConfig(cfg Config) error {
 
 	if cfg.Logging.WebhookMaxChars <= 0 {
 		errs = append(errs, errors.New("LOG_WEBHOOK_MAX_CHARS must be positive"))
+	}
+
+	if cfg.APIKey.Enabled && strings.TrimSpace(cfg.APIKey.Value) == "" {
+		errs = append(errs, errors.New("API_KEY must not be empty when API_KEY_ENABLED=true"))
 	}
 
 	if cfg.Stack.Namespace == "" {

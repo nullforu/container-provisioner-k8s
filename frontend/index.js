@@ -28,6 +28,16 @@ function apiBase() {
     return window.location.origin
 }
 
+function apiKeyEnabled() {
+    const el = byId('apiKeyEnabled')
+    return el ? el.checked : true
+}
+
+function apiKeyValue() {
+    const el = byId('apiKeyValue')
+    return el ? el.value.trim() : ''
+}
+
 function readInt(id) {
     const el = byId(id)
     return Number.parseInt(el ? el.value : '0', 10)
@@ -53,6 +63,14 @@ function showResponse(title, payload, state = 'ok') {
 async function request(method, path, body) {
     const url = `${apiBase()}${path}`
     const options = { method, headers: {} }
+
+    if (apiKeyEnabled()) {
+        const key = apiKeyValue()
+        if (!key) {
+            throw new Error('API key is enabled but empty')
+        }
+        options.headers['X-API-KEY'] = key
+    }
 
     if (body !== undefined) {
         options.headers['Content-Type'] = 'application/json'
@@ -197,10 +215,28 @@ function boot() {
     const api = byId('apiBase')
     const spec = byId('createPodSpec')
     const resp = byId('response')
+    const apiKeyEnabledEl = byId('apiKeyEnabled')
+    const apiKeyValueEl = byId('apiKeyValue')
 
     if (api) api.value = window.location.origin
     if (spec) spec.value = defaultPodSpec
     if (resp) resp.dataset.state = 'idle'
+
+    try {
+        if (apiKeyEnabledEl) {
+            const savedEnabled = localStorage.getItem('cpdash.apiKeyEnabled')
+            apiKeyEnabledEl.checked = savedEnabled === null ? true : savedEnabled === 'true'
+            apiKeyEnabledEl.addEventListener('change', () => {
+                localStorage.setItem('cpdash.apiKeyEnabled', apiKeyEnabledEl.checked ? 'true' : 'false')
+            })
+        }
+        if (apiKeyValueEl) {
+            apiKeyValueEl.value = localStorage.getItem('cpdash.apiKeyValue') || ''
+            apiKeyValueEl.addEventListener('input', () => {
+                localStorage.setItem('cpdash.apiKeyValue', apiKeyValueEl.value)
+            })
+        }
+    } catch (_) {}
 
     wireTabs()
     wireActions()

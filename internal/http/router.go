@@ -64,16 +64,23 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestLogger(cfg.Logging, logger))
 
-	r.GET("/healthz", func(c *gin.Context) {
+	if !cfg.APIKey.Enabled {
+		fmt.Printf("level=WARN msg=\"api key auth disabled\"\n")
+	}
+
+	api := r.Group("/")
+	api.Use(middleware.APIKeyAuth(cfg.APIKey))
+
+	api.GET("/healthz", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{"status": "ok"})
 	})
 
-	r.POST("/stacks", h.CreateStack)
-	r.GET("/stacks", h.ListStacks)
-	r.GET("/stacks/:stack_id", h.GetStack)
-	r.GET("/stacks/:stack_id/status", h.GetStackStatus)
-	r.DELETE("/stacks/:stack_id", h.DeleteStack)
-	r.GET("/stats", h.GetStats)
+	api.POST("/stacks", h.CreateStack)
+	api.GET("/stacks", h.ListStacks)
+	api.GET("/stacks/:stack_id", h.GetStack)
+	api.GET("/stacks/:stack_id/status", h.GetStackStatus)
+	api.DELETE("/stacks/:stack_id", h.DeleteStack)
+	api.GET("/stats", h.GetStats)
 
 	attachFrontendRoutes(r)
 

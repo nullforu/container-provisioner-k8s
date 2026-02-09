@@ -25,6 +25,10 @@ spec:
               value: "production"
             - name: HTTP_ADDR
               value: ":8081"
+            - name: API_KEY_ENABLED
+              value: "true"
+            - name: API_KEY
+              value: "secret"
             - name: DDB_USE_MOCK
               value: "false"
             - name: K8S_USE_MOCK

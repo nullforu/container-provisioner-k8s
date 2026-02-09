@@ -4,6 +4,7 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Container Provisioner Dashboard UI</title>
+        <base href="/dashboard/" />
         <link rel="stylesheet" href="./style.css" />
     </head>
 
@@ -38,6 +39,16 @@
                         <label>
                             Last stack_id
                             <input id="lastStackId" type="text" placeholder="Automatically filled after creation" />
+                        </label>
+                    </div>
+                    <div class="row cols-2">
+                        <label>
+                            API Key Enabled
+                            <input id="apiKeyEnabled" type="checkbox" checked />
+                        </label>
+                        <label>
+                            API Key (X-API-KEY)
+                            <input id="apiKeyValue" type="text" placeholder="env API_KEY value" />
                         </label>
                     </div>
 
