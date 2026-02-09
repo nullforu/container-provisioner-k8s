@@ -1,0 +1,230 @@
+:root {
+    --bg: #fff;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --border2: #d1d5db;
+    --btn: #111827;
+    --btnText: #fff;
+    --danger: #b91c1c;
+    --focus: 0 0 0 3px rgba(59, 130, 246, 0.18);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family:
+        system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        'Apple SD Gothic Neo',
+        'Noto Sans KR',
+        Arial,
+        sans-serif;
+    line-height: 1.45;
+}
+
+.wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 18px 16px 28px;
+}
+
+header {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+.sub {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+nav.tabs {
+    display: flex;
+    gap: 14px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+
+.tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 10px 2px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+.tab.active {
+    color: var(--text);
+    border-bottom-color: var(--text);
+    font-weight: 650;
+}
+.tab:focus-visible {
+    outline: none;
+    box-shadow: var(--focus);
+    border-radius: 8px;
+}
+
+.panel {
+    display: none;
+    padding: 6px 0 2px;
+}
+.panel.active {
+    display: block;
+}
+
+.sectionTitle {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 10px;
+}
+.sectionTitle h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+}
+.muted {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.grid {
+    display: grid;
+    gap: 10px;
+}
+.row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+@media (min-width: 720px) {
+    .row.cols-2 {
+        grid-template-columns: 1.6fr 1fr;
+    }
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+input,
+textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 11px;
+    font: inherit;
+    color: var(--text);
+    background: #fff;
+}
+input:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--border2);
+    box-shadow: var(--focus);
+}
+
+textarea {
+    min-height: 180px;
+    resize: vertical;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+button.action {
+    appearance: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    background: #fff;
+    color: var(--text);
+}
+button.action.primary {
+    background: var(--btn);
+    border-color: var(--btn);
+    color: var(--btnText);
+}
+button.action.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+button.action:focus-visible {
+    outline: none;
+    box-shadow: var(--focus);
+}
+button.action[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.divider {
+    border-top: 1px solid var(--border);
+    margin: 18px 0 12px;
+}
+
+.responseHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+#response {
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    min-height: 190px;
+    max-height: 360px;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    background: #fff;
+}
+#response[data-state='ok'] {
+    border-color: #bfe9db;
+}
+#response[data-state='error'] {
+    border-color: #fecaca;
+}
+#response[data-state='idle'] {
+    border-color: var(--border);
+}
