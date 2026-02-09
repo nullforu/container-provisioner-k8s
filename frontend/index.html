@@ -3,126 +3,125 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>SMCTF Container Provisioner</title>
-        <style>
-            body {
-                font-family: sans-serif;
-                margin: 16px;
-                line-height: 1.4;
-            }
-            h1 {
-                margin: 0 0 12px;
-                font-size: 20px;
-            }
-            h2 {
-                margin: 16px 0 8px;
-                font-size: 16px;
-            }
-            section {
-                border: 1px solid #ddd;
-                padding: 12px;
-                margin-bottom: 12px;
-                border-radius: 6px;
-            }
-            .row {
-                display: flex;
-                gap: 8px;
-                flex-wrap: wrap;
-                margin-bottom: 8px;
-            }
-            label {
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                min-width: 180px;
-            }
-            input,
-            textarea,
-            button {
-                font: inherit;
-                padding: 6px;
-            }
-            textarea {
-                min-height: 160px;
-                width: 100%;
-            }
-            button {
-                cursor: pointer;
-            }
-            #response {
-                white-space: pre-wrap;
-                background: #f7f7f7;
-                border: 1px solid #ddd;
-                padding: 10px;
-                border-radius: 6px;
-                min-height: 180px;
-            }
-            .muted {
-                color: #666;
-                font-size: 12px;
-            }
-        </style>
+        <title>Container Provisioner Dashboard UI</title>
+        <link rel="stylesheet" href="./style.css" />
     </head>
+
     <body>
-        <h1>SMCTF Container Provisioner UI</h1>
+        <div class="wrap">
+            <header>
+                <h1>Container Provisioner Dashboard UI</h1>
+            </header>
 
-        <section>
-            <h2>기본 설정</h2>
-            <div class="row">
-                <label>
-                    API Base URL
-                    <input id="apiBase" type="text" placeholder="http://localhost:8081" />
-                </label>
-                <label>
-                    마지막 stack_id
-                    <input id="lastStackId" type="text" placeholder="생성 후 자동 채움" />
-                </label>
-            </div>
-            <div class="row">
-                <button id="btnHealth">GET /healthz</button>
-                <button id="btnListAllStacks">GET /stacks</button>
-                <button id="btnStats">GET /stats</button>
-            </div>
-            <div class="muted">모든 버튼 실행 결과는 하단 Response 패널에 표시됩니다.</div>
-        </section>
+            <nav id="tabBar" class="tabs" role="tablist" aria-label="Tabs">
+                <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="settings">
+                    Settings
+                </button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-tab="create">Create Stack</button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-tab="stack">
+                    Individual Stack Operations
+                </button>
+            </nav>
 
-        <section>
-            <h2>스택 생성</h2>
-            <div class="row">
-                <label>
-                    target_port
-                    <input id="createTargetPort" type="number" value="80" />
-                </label>
-            </div>
-            <label>
-                pod_spec (YAML)
-                <textarea id="createPodSpec"></textarea>
-            </label>
-            <div class="row">
-                <button id="btnCreateStack">POST /stacks</button>
-            </div>
-        </section>
+            <section class="panel active" data-panel="settings">
+                <div class="sectionTitle">
+                    <h2>Settings</h2>
+                    <div class="muted">Public Endpoint</div>
+                </div>
 
-        <section>
-            <h2>개별 스택 작업</h2>
-            <div class="row">
-                <label>
-                    stack_id
-                    <input id="stackIdInput" type="text" placeholder="stack-..." />
-                </label>
-            </div>
-            <div class="row">
-                <button id="btnGetStack">GET /stacks/{stack_id}</button>
-                <button id="btnGetStackStatus">GET /stacks/{stack_id}/status</button>
-                <button id="btnDeleteStack">DELETE /stacks/{stack_id}</button>
-            </div>
-        </section>
+                <div class="grid">
+                    <div class="row cols-2">
+                        <label>
+                            API Base URL
+                            <input id="apiBase" type="text" placeholder="http://localhost:8081" />
+                        </label>
+                        <label>
+                            Last stack_id
+                            <input id="lastStackId" type="text" placeholder="Automatically filled after creation" />
+                        </label>
+                    </div>
 
-        <section>
-            <h2>Response</h2>
+                    <div class="actions">
+                        <button id="btnHealth" class="action primary" type="button" data-action="health">
+                            GET /healthz
+                        </button>
+                        <button id="btnListAllStacks" class="action" type="button" data-action="listStacks">
+                            GET /stacks
+                        </button>
+                        <button id="btnStats" class="action" type="button" data-action="stats">GET /stats</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel" data-panel="create">
+                <div class="sectionTitle">
+                    <h2>Create Stack</h2>
+                    <div class="muted">POST /stacks</div>
+                </div>
+
+                <div class="grid">
+                    <div class="row cols-2">
+                        <label>
+                            target_port
+                            <input id="createTargetPort" type="number" value="80" min="1" max="65535" />
+                        </label>
+                    </div>
+
+                    <label>
+                        pod_spec (YAML)
+                        <textarea id="createPodSpec"></textarea>
+                    </label>
+
+                    <div class="actions">
+                        <button id="btnCreateStack" class="action primary" type="button" data-action="create">
+                            POST /stacks
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel" data-panel="stack">
+                <div class="sectionTitle">
+                    <h2>Individual Stack Operations</h2>
+                    <div class="muted">GET/DELETE</div>
+                </div>
+
+                <div class="grid">
+                    <div class="row cols-2">
+                        <label>
+                            stack_id
+                            <input id="stackIdInput" type="text" placeholder="stack-..." />
+                        </label>
+                    </div>
+
+                    <div class="actions">
+                        <button id="btnGetStack" class="action" type="button" data-action="getStack">
+                            GET /stacks/{stack_id}
+                        </button>
+                        <button id="btnGetStackStatus" class="action" type="button" data-action="getStatus">
+                            GET /stacks/{stack_id}/status
+                        </button>
+                        <button id="btnDeleteStack" class="action danger" type="button" data-action="deleteStack">
+                            DELETE /stacks/{stack_id}
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="divider"></div>
+
+            <div class="responseHead">
+                <h2 style="margin: 0; font-size: 14px; font-weight: 650">Response</h2>
+                <div class="actions" style="margin: 0">
+                    <button id="btnClearResponse" class="action" type="button" data-action="clearResponse">
+                        Clear
+                    </button>
+                </div>
+            </div>
+
             <div id="response">ready</div>
-        </section>
 
-        <script src="./index.js" defer></script>
+            <script src="./index.js" defer></script>
+        </div>
     </body>
 </html>

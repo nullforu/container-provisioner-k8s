@@ -1,7 +1,6 @@
 package http
 
 import (
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,13 +21,10 @@ func attachFrontendRoutes(r *gin.Engine) {
 		return
 	}
 
-	r.NoRoute(func(ctx *gin.Context) {
-		if strings.HasPrefix(ctx.Request.URL.Path, apiPathPrefix) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
-		}
+	r.GET("/dashboard/*path", func(ctx *gin.Context) {
+		reqPath := ctx.Param("path")
 
-		if filePath, ok := resolveStaticFile(staticDir, ctx.Request.URL.Path); ok {
+		if filePath, ok := resolveStaticFile(staticDir, reqPath); ok {
 			ctx.File(filePath)
 			return
 		}
