@@ -228,3 +228,122 @@ button.action[disabled] {
 #response[data-state='idle'] {
     border-color: var(--border);
 }
+
+.stackList {
+    display: grid;
+    gap: 12px;
+}
+
+.stackEmpty {
+    border: 1px dashed var(--border2);
+    border-radius: 12px;
+    padding: 16px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+.stackCard {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    background: #fff;
+    display: grid;
+    gap: 10px;
+}
+
+.stackCardHead {
+    display: grid;
+    gap: 8px;
+    align-items: center;
+}
+
+.stackTitle {
+    font-weight: 650;
+    font-size: 14px;
+    word-break: break-word;
+}
+
+.stackStatus {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    width: fit-content;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-running {
+    border-color: #bbf7d0;
+    color: #166534;
+    background: #f0fdf4;
+}
+
+.status-creating {
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+    background: #eff6ff;
+}
+
+.status-stopped,
+.status-failed,
+.status-node_deleted {
+    border-color: #fecaca;
+    color: #b91c1c;
+    background: #fef2f2;
+}
+
+.stackCardActions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.stackMeta {
+    display: grid;
+    gap: 8px;
+}
+
+.stackMetaRow {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) 2fr;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border);
+}
+
+.stackMetaRow:last-child {
+    border-bottom: none;
+}
+
+.stackMetaKey {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.stackMetaValue {
+    font-size: 12.5px;
+    font-family: var(--mono);
+    word-break: break-word;
+}
+
+@media (min-width: 760px) {
+    .stackCardHead {
+        grid-template-columns: 1fr auto auto;
+    }
+}
+
+@media (max-width: 640px) {
+    nav.tabs {
+        flex-wrap: wrap;
+    }
+
+    .stackMetaRow {
+        grid-template-columns: 1fr;
+    }
+
+    .stackCardActions {
+        width: 100%;
+    }
+}

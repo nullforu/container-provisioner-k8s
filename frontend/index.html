@@ -18,16 +18,20 @@
                 <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="settings">
                     Settings
                 </button>
-                <button class="tab" type="button" role="tab" aria-selected="false" data-tab="create">Create Stack</button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-tab="create">
+                    Create Stack
+                </button>
                 <button class="tab" type="button" role="tab" aria-selected="false" data-tab="stack">
                     Individual Stack Operations
+                </button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-tab="manage">
+                    Manage Stacks
                 </button>
             </nav>
 
             <section class="panel active" data-panel="settings">
                 <div class="sectionTitle">
                     <h2>Settings</h2>
-                    <div class="muted">Public Endpoint</div>
                 </div>
 
                 <div class="grid">
@@ -43,12 +47,12 @@
                     </div>
                     <div class="row cols-2">
                         <label>
-                            API Key Enabled
-                            <input id="apiKeyEnabled" type="checkbox" checked />
+                            API Key (X-API-KEY)
+                            <input id="apiKeyValue" type="text" placeholder="Leave empty to disable" />
                         </label>
                         <label>
-                            API Key (X-API-KEY)
-                            <input id="apiKeyValue" type="text" placeholder="env API_KEY value" />
+                            API Key Status
+                            <input id="apiKeyStatus" type="text" value="disabled" readonly />
                         </label>
                     </div>
 
@@ -67,7 +71,6 @@
             <section class="panel" data-panel="create">
                 <div class="sectionTitle">
                     <h2>Create Stack</h2>
-                    <div class="muted">POST /stacks</div>
                 </div>
 
                 <div class="grid">
@@ -94,7 +97,6 @@
             <section class="panel" data-panel="stack">
                 <div class="sectionTitle">
                     <h2>Individual Stack Operations</h2>
-                    <div class="muted">GET/DELETE</div>
                 </div>
 
                 <div class="grid">
@@ -115,6 +117,23 @@
                         <button id="btnDeleteStack" class="action danger" type="button" data-action="deleteStack">
                             DELETE /stacks/{stack_id}
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel" data-panel="manage">
+                <div class="sectionTitle">
+                    <h2>Stack Management</h2>
+                </div>
+
+                <div class="grid">
+                    <div class="actions">
+                        <button id="btnRefreshStacks" class="action primary" type="button" data-action="refreshStacks">
+                            Refresh
+                        </button>
+                    </div>
+                    <div id="stackList" class="stackList">
+                        <div class="stackEmpty">No stacks loaded.</div>
                     </div>
                 </div>
             </section>
