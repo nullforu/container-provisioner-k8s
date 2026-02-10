@@ -104,7 +104,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Stack, error) {
 	return st, nil
 }
 
-func (s *Service) Get(ctx context.Context, stackID string) (Stack, error) {
+func (s *Service) GetDetails(ctx context.Context, stackID string) (Stack, error) {
+	if err := s.RefreshStatus(ctx, stackID); err != nil {
+		return Stack{}, err
+	}
+
 	st, ok, err := s.repo.Get(ctx, stackID)
 	if err != nil {
 		return Stack{}, err
@@ -119,27 +123,51 @@ func (s *Service) Get(ctx context.Context, stackID string) (Stack, error) {
 }
 
 func (s *Service) GetStatus(ctx context.Context, stackID string) (Status, error) {
-	detail, err := s.GetStatusDetail(ctx, stackID)
+	summary, err := s.GetStatusSummary(ctx, stackID)
 	if err != nil {
 		return "", err
 	}
 
-	return detail.Status, nil
+	return summary.Status, nil
 }
 
-func (s *Service) GetStatusDetail(ctx context.Context, stackID string) (StackStatusDetail, error) {
+func (s *Service) GetStatusSummary(ctx context.Context, stackID string) (StackStatusSummary, error) {
+	if err := s.RefreshStatus(ctx, stackID); err != nil {
+		return StackStatusSummary{}, err
+	}
+
 	st, ok, err := s.repo.Get(ctx, stackID)
 	if err != nil {
-		return StackStatusDetail{}, err
+		return StackStatusSummary{}, err
 	}
 
 	if !ok {
-		return StackStatusDetail{}, ErrNotFound
+		return StackStatusSummary{}, ErrNotFound
+	}
+
+	return StackStatusSummary{
+		StackID:      st.StackID,
+		Status:       st.Status,
+		TTL:          st.TTLExpiresAt,
+		NodePort:     st.NodePort,
+		TargetPort:   st.TargetPort,
+		NodePublicIP: s.nodePublicIP(ctx, st.NodeID),
+	}, nil
+}
+
+func (s *Service) RefreshStatus(ctx context.Context, stackID string) error {
+	st, ok, err := s.repo.Get(ctx, stackID)
+	if err != nil {
+		return err
+	}
+
+	if !ok {
+		return ErrNotFound
 	}
 
 	nodeExists, err := s.k8s.NodeExists(ctx, st.NodeID)
 	if err != nil {
-		return StackStatusDetail{}, err
+		return err
 	}
 
 	if !nodeExists {
@@ -151,7 +179,7 @@ func (s *Service) GetStatusDetail(ctx context.Context, stackID string) (StackSta
 			log.Printf("level=ERROR msg=\"delete stack from repository on missing node failed\" stack_id=%s err=%q", st.StackID, err.Error())
 		}
 
-		return StackStatusDetail{}, ErrNotFound
+		return ErrNotFound
 	}
 
 	status, nodeID, err := s.k8s.GetPodStatus(ctx, st.Namespace, st.PodID)
@@ -161,10 +189,10 @@ func (s *Service) GetStatusDetail(ctx context.Context, stackID string) (StackSta
 				log.Printf("level=ERROR msg=\"delete stack after missing pod failed\" stack_id=%s err=%q", st.StackID, deleteErr.Error())
 			}
 
-			return StackStatusDetail{}, ErrNotFound
+			return ErrNotFound
 		}
 
-		return StackStatusDetail{}, err
+		return err
 	}
 
 	if status == StatusNodeDeleted {
@@ -176,21 +204,14 @@ func (s *Service) GetStatusDetail(ctx context.Context, stackID string) (StackSta
 			log.Printf("level=ERROR msg=\"delete stack from repository on node_deleted failed\" stack_id=%s err=%q", st.StackID, err.Error())
 		}
 
-		return StackStatusDetail{}, ErrNotFound
+		return ErrNotFound
 	}
 
 	if err := s.repo.UpdateStatus(ctx, st.StackID, status, nodeID); err != nil {
 		log.Printf("level=ERROR msg=\"update stack status failed\" stack_id=%s status=%s node_id=%s err=%q", st.StackID, status, nodeID, err.Error())
 	}
 
-	return StackStatusDetail{
-		StackID:      st.StackID,
-		Status:       status,
-		TTL:          st.TTLExpiresAt,
-		NodePort:     st.NodePort,
-		TargetPort:   st.TargetPort,
-		NodePublicIP: s.nodePublicIP(ctx, st.NodeID),
-	}, nil
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, stackID string) error {
@@ -218,11 +239,28 @@ func (s *Service) ListAll(ctx context.Context) ([]Stack, error) {
 		return nil, err
 	}
 
-	for i := range items {
-		s.attachNodePublicIP(ctx, &items[i])
+	refreshed := make([]Stack, 0, len(items))
+	for _, item := range items {
+		if err := s.RefreshStatus(ctx, item.StackID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+
+		st, ok, err := s.repo.Get(ctx, item.StackID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+
+		s.attachNodePublicIP(ctx, &st)
+		refreshed = append(refreshed, st)
 	}
 
-	return items, nil
+	return refreshed, nil
 }
 
 func (s *Service) Stats(ctx context.Context) (Stats, error) {

@@ -44,7 +44,7 @@ type Stats struct {
 	ReservedMemoryBytes int64          `json:"reserved_memory_bytes"`
 }
 
-type StackStatusDetail struct {
+type StackStatusSummary struct {
 	StackID      string    `json:"stack_id"`
 	Status       Status    `json:"status"`
 	TTL          time.Time `json:"ttl"`

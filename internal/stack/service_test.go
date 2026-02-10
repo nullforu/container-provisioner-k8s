@@ -60,7 +60,7 @@ spec:
 		t.Fatalf("delete error: %v", err)
 	}
 
-	if _, err := svc.Get(context.Background(), st.StackID); err == nil {
+	if _, err := svc.GetDetails(context.Background(), st.StackID); err == nil {
 		t.Fatalf("expected not found")
 	}
 }
@@ -192,7 +192,7 @@ spec:
 
 	svc.CleanupExpiredAndOrphaned(context.Background())
 
-	if _, err := svc.Get(context.Background(), st.StackID); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.GetDetails(context.Background(), st.StackID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected stack to be deleted when service is missing, got err=%v", err)
 	}
 }
@@ -237,7 +237,7 @@ spec:
 
 	svc.CleanupExpiredAndOrphaned(context.Background())
 
-	if _, err := svc.Get(context.Background(), st.StackID); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.GetDetails(context.Background(), st.StackID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected stack to be deleted when pod is missing, got err=%v", err)
 	}
 }

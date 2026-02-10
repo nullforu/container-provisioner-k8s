@@ -46,7 +46,7 @@ func (h *Handler) CreateStack(c *gin.Context) {
 
 func (h *Handler) GetStack(c *gin.Context) {
 	stackID := c.Param("stack_id")
-	st, err := h.svc.Get(c.Request.Context(), stackID)
+	st, err := h.svc.GetDetails(c.Request.Context(), stackID)
 	if err != nil {
 		h.writeError(c, err)
 		return
@@ -55,15 +55,15 @@ func (h *Handler) GetStack(c *gin.Context) {
 	c.JSON(http.StatusOK, st)
 }
 
-func (h *Handler) GetStackStatus(c *gin.Context) {
+func (h *Handler) GetStackStatusSummary(c *gin.Context) {
 	stackID := c.Param("stack_id")
-	statusDetail, err := h.svc.GetStatusDetail(c.Request.Context(), stackID)
+	statusSummary, err := h.svc.GetStatusSummary(c.Request.Context(), stackID)
 	if err != nil {
 		h.writeError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, statusDetail)
+	c.JSON(http.StatusOK, statusSummary)
 }
 
 func (h *Handler) DeleteStack(c *gin.Context) {
