@@ -22,16 +22,9 @@ type Config struct {
 }
 
 type LoggingConfig struct {
-	Dir               string
-	FilePrefix        string
-	DiscordWebhookURL string
-	SlackWebhookURL   string
-	MaxBodyBytes      int
-	WebhookQueueSize  int
-	WebhookTimeout    time.Duration
-	WebhookBatchSize  int
-	WebhookBatchWait  time.Duration
-	WebhookMaxChars   int
+	Dir          string
+	FilePrefix   string
+	MaxBodyBytes int
 }
 
 type APIKeyConfig struct {
@@ -80,31 +73,6 @@ func Load() (Config, error) {
 	logDir := getEnv("LOG_DIR", "logs")
 	logPrefix := getEnv("LOG_FILE_PREFIX", "app")
 	logMaxBodyBytes, err := getEnvInt("LOG_MAX_BODY_BYTES", 1024*1024)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	logWebhookQueueSize, err := getEnvInt("LOG_WEBHOOK_QUEUE_SIZE", 1000)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	logWebhookTimeout, err := getDuration("LOG_WEBHOOK_TIMEOUT", 5*time.Second)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	logWebhookBatchSize, err := getEnvInt("LOG_WEBHOOK_BATCH_SIZE", 20)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	logWebhookBatchWait, err := getDuration("LOG_WEBHOOK_BATCH_WAIT", 2*time.Second)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	logWebhookMaxChars, err := getEnvInt("LOG_WEBHOOK_MAX_CHARS", 1800)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -181,16 +149,9 @@ func Load() (Config, error) {
 		HTTPAddr:        httpAddr,
 		ShutdownTimeout: shutdownTimeout,
 		Logging: LoggingConfig{
-			Dir:               logDir,
-			FilePrefix:        logPrefix,
-			DiscordWebhookURL: getEnv("LOG_DISCORD_WEBHOOK_URL", ""),
-			SlackWebhookURL:   getEnv("LOG_SLACK_WEBHOOK_URL", ""),
-			MaxBodyBytes:      logMaxBodyBytes,
-			WebhookQueueSize:  logWebhookQueueSize,
-			WebhookTimeout:    logWebhookTimeout,
-			WebhookBatchSize:  logWebhookBatchSize,
-			WebhookBatchWait:  logWebhookBatchWait,
-			WebhookMaxChars:   logWebhookMaxChars,
+			Dir:          logDir,
+			FilePrefix:   logPrefix,
+			MaxBodyBytes: logMaxBodyBytes,
 		},
 		APIKey: APIKeyConfig{
 			Enabled: apiKeyEnabled,
@@ -342,26 +303,6 @@ func validateConfig(cfg Config) error {
 		errs = append(errs, errors.New("LOG_MAX_BODY_BYTES must be positive"))
 	}
 
-	if cfg.Logging.WebhookQueueSize <= 0 {
-		errs = append(errs, errors.New("LOG_WEBHOOK_QUEUE_SIZE must be positive"))
-	}
-
-	if cfg.Logging.WebhookTimeout <= 0 {
-		errs = append(errs, errors.New("LOG_WEBHOOK_TIMEOUT must be positive"))
-	}
-
-	if cfg.Logging.WebhookBatchSize <= 0 {
-		errs = append(errs, errors.New("LOG_WEBHOOK_BATCH_SIZE must be positive"))
-	}
-
-	if cfg.Logging.WebhookBatchWait <= 0 {
-		errs = append(errs, errors.New("LOG_WEBHOOK_BATCH_WAIT must be positive"))
-	}
-
-	if cfg.Logging.WebhookMaxChars <= 0 {
-		errs = append(errs, errors.New("LOG_WEBHOOK_MAX_CHARS must be positive"))
-	}
-
 	if cfg.APIKey.Enabled && strings.TrimSpace(cfg.APIKey.Value) == "" {
 		errs = append(errs, errors.New("API_KEY must not be empty when API_KEY_ENABLED=true"))
 	}
@@ -422,9 +363,6 @@ func validateConfig(cfg Config) error {
 }
 
 func Redact(cfg Config) Config {
-	cfg.Logging.DiscordWebhookURL = redact(cfg.Logging.DiscordWebhookURL)
-	cfg.Logging.SlackWebhookURL = redact(cfg.Logging.SlackWebhookURL)
-
 	return cfg
 }
 
@@ -444,42 +382,45 @@ func redact(value string) string {
 	return value[:visiblePrefix] + "***" + value[len(value)-visibleSuffix:]
 }
 
-func FormatForLog(cfg Config) string {
+func FormatForLog(cfg Config) map[string]any {
 	cfg = Redact(cfg)
-	var b strings.Builder
-	fmt.Fprintf(&b, "AppEnv=%s\n", cfg.AppEnv)
-	fmt.Fprintf(&b, "HTTPAddr=%s\n", cfg.HTTPAddr)
-	fmt.Fprintf(&b, "ShutdownTimeout=%s\n", cfg.ShutdownTimeout)
-	fmt.Fprintln(&b, "Logging:")
-	fmt.Fprintf(&b, "  Dir=%s\n", cfg.Logging.Dir)
-	fmt.Fprintf(&b, "  FilePrefix=%s\n", cfg.Logging.FilePrefix)
-	fmt.Fprintf(&b, "  DiscordWebhookURL=%s\n", cfg.Logging.DiscordWebhookURL)
-	fmt.Fprintf(&b, "  SlackWebhookURL=%s\n", cfg.Logging.SlackWebhookURL)
-	fmt.Fprintf(&b, "  MaxBodyBytes=%d\n", cfg.Logging.MaxBodyBytes)
-	fmt.Fprintf(&b, "  WebhookQueueSize=%d\n", cfg.Logging.WebhookQueueSize)
-	fmt.Fprintf(&b, "  WebhookTimeout=%s\n", cfg.Logging.WebhookTimeout)
-	fmt.Fprintf(&b, "  WebhookBatchSize=%d\n", cfg.Logging.WebhookBatchSize)
-	fmt.Fprintf(&b, "  WebhookBatchWait=%s\n", cfg.Logging.WebhookBatchWait)
-	fmt.Fprintf(&b, "  WebhookMaxChars=%d\n", cfg.Logging.WebhookMaxChars)
-	fmt.Fprintln(&b, "Stack:")
-	fmt.Fprintf(&b, "  Namespace=%s\n", cfg.Stack.Namespace)
-	fmt.Fprintf(&b, "  StackTTL=%s\n", cfg.Stack.StackTTL)
-	fmt.Fprintf(&b, "  SchedulerInterval=%s\n", cfg.Stack.SchedulerInterval)
-	fmt.Fprintf(&b, "  NodePortRange=%d-%d\n", cfg.Stack.NodePortMin, cfg.Stack.NodePortMax)
-	fmt.Fprintf(&b, "  PortLockTTL=%s\n", cfg.Stack.PortLockTTL)
-	fmt.Fprintf(&b, "  DynamoTableName=%s\n", cfg.Stack.DynamoTableName)
-	fmt.Fprintf(&b, "  AWSRegion=%s\n", cfg.Stack.AWSRegion)
-	fmt.Fprintf(&b, "  AWSEndpoint=%s\n", cfg.Stack.AWSEndpoint)
-	fmt.Fprintf(&b, "  DynamoConsistentRead=%t\n", cfg.Stack.DynamoConsistentRead)
-	fmt.Fprintf(&b, "  UseMockRepository=%t\n", cfg.Stack.UseMockRepository)
-	fmt.Fprintf(&b, "  KubeConfigPath=%s\n", cfg.Stack.KubeConfigPath)
-	fmt.Fprintf(&b, "  KubeContext=%s\n", cfg.Stack.KubeContext)
-	fmt.Fprintf(&b, "  K8sQPS=%.2f\n", cfg.Stack.K8sQPS)
-	fmt.Fprintf(&b, "  K8sBurst=%d\n", cfg.Stack.K8sBurst)
-	fmt.Fprintf(&b, "  SchedulingTimeout=%s\n", cfg.Stack.SchedulingTimeout)
-	fmt.Fprintf(&b, "  UseMockKubernetes=%t\n", cfg.Stack.UseMockKubernetes)
-	fmt.Fprintf(&b, "  RequireIngressNetworkPolicy=%t\n", cfg.Stack.RequireIngressNP)
-	fmt.Fprintf(&b, "  StackNodeRole=%s\n", cfg.Stack.StackNodeRole)
 
-	return b.String()
+	return map[string]any{
+		"app_env":          cfg.AppEnv,
+		"http_addr":        cfg.HTTPAddr,
+		"shutdown_timeout": seconds(cfg.ShutdownTimeout),
+		"logging": map[string]any{
+			"dir":            cfg.Logging.Dir,
+			"file_prefix":    cfg.Logging.FilePrefix,
+			"max_body_bytes": cfg.Logging.MaxBodyBytes,
+		},
+		"stack": map[string]any{
+			"namespace":                      cfg.Stack.Namespace,
+			"stack_ttl":                      seconds(cfg.Stack.StackTTL),
+			"scheduler_interval":             seconds(cfg.Stack.SchedulerInterval),
+			"node_port_min":                  cfg.Stack.NodePortMin,
+			"node_port_max":                  cfg.Stack.NodePortMax,
+			"port_lock_ttl":                  seconds(cfg.Stack.PortLockTTL),
+			"dynamo_table_name":              cfg.Stack.DynamoTableName,
+			"aws_region":                     cfg.Stack.AWSRegion,
+			"aws_endpoint":                   cfg.Stack.AWSEndpoint,
+			"dynamo_consistent_read":         cfg.Stack.DynamoConsistentRead,
+			"use_mock_repository":            cfg.Stack.UseMockRepository,
+			"kube_config_path":               cfg.Stack.KubeConfigPath,
+			"kube_context":                   cfg.Stack.KubeContext,
+			"k8s_qps":                        cfg.Stack.K8sQPS,
+			"k8s_burst":                      cfg.Stack.K8sBurst,
+			"scheduling_timeout":             seconds(cfg.Stack.SchedulingTimeout),
+			"use_mock_kubernetes":            cfg.Stack.UseMockKubernetes,
+			"require_ingress_network_policy": cfg.Stack.RequireIngressNP,
+			"stack_node_role":                cfg.Stack.StackNodeRole,
+		},
+		"api_key": map[string]any{
+			"enabled": cfg.APIKey.Enabled,
+		},
+	}
+}
+
+func seconds(d time.Duration) int64 {
+	return int64(d.Seconds())
 }

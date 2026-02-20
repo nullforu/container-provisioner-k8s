@@ -2,7 +2,7 @@ package stack
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -17,13 +17,13 @@ func NewScheduler(interval time.Duration, service *Service) *Scheduler {
 
 func (s *Scheduler) Run(ctx context.Context) {
 	if s == nil || s.service == nil {
-		log.Printf("level=ERROR msg=\"scheduler run skipped due to nil dependency\"")
+		slog.Error("scheduler run skipped due to nil dependency")
 		return
 	}
 
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.Printf("level=ERROR msg=\"scheduler panic recovered\" panic=%v", rec)
+			slog.Error("scheduler panic recovered", slog.Any("error", rec))
 		}
 	}()
 

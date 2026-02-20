@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	"io"
-	"log"
+	"log/slog"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -18,30 +17,41 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("config error: %v", err)
+		boot := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+		boot.Error("config error", slog.Any("error", err))
+		os.Exit(1)
 	}
 
-	logger, err := logging.New(cfg.Logging)
+	logger, err := logging.New(cfg.Logging, logging.Options{
+		Service:   "container-provisioner",
+		Env:       cfg.AppEnv,
+		AddSource: false,
+	})
 	if err != nil {
-		log.Fatalf("logging init error: %v", err)
+		boot := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+		boot.Error("logging init error", slog.Any("error", err))
+		os.Exit(1)
 	}
+
+	slog.SetDefault(logger.Logger)
 
 	defer func() {
 		if err := logger.Close(); err != nil {
-			log.Printf("log close error: %v", err)
+			logger.Error("log close error", slog.Any("error", err))
 		}
 	}()
 
-	log.SetOutput(io.MultiWriter(os.Stdout, logger))
-	log.Printf("config loaded:\n%s", config.FormatForLog(cfg))
+	logger.Info("config loaded", slog.Any("config", config.FormatForLog(cfg)))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	router, err := httpserver.NewRouter(ctx, cfg, logger)
 	if err != nil {
-		log.Fatalf("router init error: %v", err)
+		logger.Error("router init error", slog.Any("error", err))
+		os.Exit(1)
 	}
+
 	srv := &nethttp.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           router,
@@ -52,9 +62,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("server listening on %s", cfg.HTTPAddr)
+		logger.Info("server listening", slog.String("addr", cfg.HTTPAddr))
 		if err := srv.ListenAndServe(); err != nil && err != nethttp.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			logger.Error("server error", slog.Any("error", err))
+			os.Exit(1)
 		}
 	}()
 
@@ -63,6 +74,6 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("server shutdown error: %v", err)
+		logger.Error("server shutdown error", slog.Any("error", err))
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,7 +48,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Stack, error) {
 	defer func() {
 		if releasePort {
 			if err := s.repo.ReleaseNodePort(context.Background(), nodePort); err != nil {
-				log.Printf("level=ERROR msg=\"release reserved nodeport failed\" node_port=%d err=%q", nodePort, err.Error())
+				slog.Error("release reserved nodeport failed", slog.Int("node_port", nodePort), slog.Any("error", err))
 			}
 		}
 	}()
@@ -87,13 +87,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Stack, error) {
 
 	nodePublicIP, ipErr := s.k8s.GetNodePublicIP(ctx, st.NodeID)
 	if ipErr != nil {
-		log.Printf("level=WARN msg=\"resolve node public ip failed\" stack_id=%s node_id=%s err=%q", st.StackID, st.NodeID, ipErr.Error())
+		slog.Warn("resolve node public ip failed", slog.String("stack_id", st.StackID), slog.String("node_id", st.NodeID), slog.Any("error", ipErr))
 	}
 	st.NodePublicIP = nodePublicIP
 
 	if err := s.repo.Create(ctx, st); err != nil {
 		if k8sErr := s.k8s.DeletePodAndService(context.Background(), st.Namespace, st.PodID, st.ServiceName); k8sErr != nil {
-			log.Printf("level=ERROR msg=\"rollback delete pod/service failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, k8sErr.Error())
+			slog.Error("rollback delete pod/service failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", k8sErr))
 		}
 
 		return Stack{}, err
@@ -172,11 +172,11 @@ func (s *Service) RefreshStatus(ctx context.Context, stackID string) error {
 
 	if !nodeExists {
 		if err := s.k8s.DeletePodAndService(ctx, st.Namespace, st.PodID, st.ServiceName); err != nil {
-			log.Printf("level=ERROR msg=\"delete pod/service on missing node failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, err.Error())
+			slog.Error("delete pod/service on missing node failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", err))
 		}
 
 		if _, _, err := s.repo.Delete(ctx, st.StackID); err != nil {
-			log.Printf("level=ERROR msg=\"delete stack from repository on missing node failed\" stack_id=%s err=%q", st.StackID, err.Error())
+			slog.Error("delete stack from repository on missing node failed", slog.String("stack_id", st.StackID), slog.Any("error", err))
 		}
 
 		return ErrNotFound
@@ -186,7 +186,7 @@ func (s *Service) RefreshStatus(ctx context.Context, stackID string) error {
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			if _, _, deleteErr := s.repo.Delete(ctx, st.StackID); deleteErr != nil {
-				log.Printf("level=ERROR msg=\"delete stack after missing pod failed\" stack_id=%s err=%q", st.StackID, deleteErr.Error())
+				slog.Error("delete stack after missing pod failed", slog.String("stack_id", st.StackID), slog.Any("error", deleteErr))
 			}
 
 			return ErrNotFound
@@ -197,18 +197,18 @@ func (s *Service) RefreshStatus(ctx context.Context, stackID string) error {
 
 	if status == StatusNodeDeleted {
 		if err := s.k8s.DeletePodAndService(ctx, st.Namespace, st.PodID, st.ServiceName); err != nil {
-			log.Printf("level=ERROR msg=\"delete pod/service on node_deleted failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, err.Error())
+			slog.Error("delete pod/service on node_deleted failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", err))
 		}
 
 		if _, _, err := s.repo.Delete(ctx, st.StackID); err != nil {
-			log.Printf("level=ERROR msg=\"delete stack from repository on node_deleted failed\" stack_id=%s err=%q", st.StackID, err.Error())
+			slog.Error("delete stack from repository on node_deleted failed", slog.String("stack_id", st.StackID), slog.Any("error", err))
 		}
 
 		return ErrNotFound
 	}
 
 	if err := s.repo.UpdateStatus(ctx, st.StackID, status, nodeID); err != nil {
-		log.Printf("level=ERROR msg=\"update stack status failed\" stack_id=%s status=%s node_id=%s err=%q", st.StackID, status, nodeID, err.Error())
+		slog.Error("update stack status failed", slog.String("stack_id", st.StackID), slog.String("status", string(status)), slog.String("node_id", nodeID), slog.Any("error", err))
 	}
 
 	return nil
@@ -225,7 +225,7 @@ func (s *Service) Delete(ctx context.Context, stackID string) error {
 	}
 
 	if err := s.k8s.DeletePodAndService(ctx, st.Namespace, st.PodID, st.ServiceName); err != nil {
-		log.Printf("level=ERROR msg=\"delete pod/service failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, err.Error())
+		slog.Error("delete pod/service failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", err))
 	}
 
 	_, _, err = s.repo.Delete(ctx, stackID)
@@ -303,7 +303,7 @@ func (s *Service) attachNodePublicIP(ctx context.Context, st *Stack) {
 func (s *Service) nodePublicIP(ctx context.Context, nodeID string) *string {
 	ip, err := s.k8s.GetNodePublicIP(ctx, nodeID)
 	if err != nil {
-		log.Printf("level=WARN msg=\"resolve node public ip failed\" node_id=%s err=%q", nodeID, err.Error())
+		slog.Warn("resolve node public ip failed", slog.String("node_id", nodeID), slog.Any("error", err))
 		return nil
 	}
 	return ip
@@ -313,8 +313,16 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 	now := s.now()
 	items, err := s.ListAll(ctx)
 	if err != nil {
-		log.Printf("level=ERROR msg=\"list stacks for cleanup failed\" err=%q", err.Error())
-		log.Printf("level=INFO msg=\"cleanup loop completed\" scanned=0 targets=0 cleaned=0 failures=1 resource_scan_errors=0 orphan_scan_errors=0 note=%q", "list stacks failed")
+		slog.Error("list stacks for cleanup failed", slog.Any("error", err))
+		slog.Info("cleanup loop completed",
+			slog.Int("scanned", 0),
+			slog.Int("targets", 0),
+			slog.Int("cleaned", 0),
+			slog.Int("failures", 1),
+			slog.Int("resource_scan_errors", 0),
+			slog.Int("orphan_scan_errors", 0),
+			slog.String("note", "list stacks failed"),
+		)
 
 		return
 	}
@@ -333,12 +341,12 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 			expiredTargets++
 			failed := false
 			if err := s.k8s.DeletePodAndService(ctx, st.Namespace, st.PodID, st.ServiceName); err != nil {
-				log.Printf("level=ERROR msg=\"cleanup delete pod/service failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, err.Error())
+				slog.Error("cleanup delete pod/service failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", err))
 				failed = true
 			}
 
 			if _, _, err := s.repo.Delete(ctx, st.StackID); err != nil {
-				log.Printf("level=ERROR msg=\"cleanup delete stack from repository failed\" stack_id=%s err=%q", st.StackID, err.Error())
+				slog.Error("cleanup delete stack from repository failed", slog.String("stack_id", st.StackID), slog.Any("error", err))
 				failed = true
 			}
 
@@ -354,20 +362,20 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 	if err != nil {
 		orphanScanErrors++
 		failures++
-		log.Printf("level=ERROR msg=\"list stacks for orphan pod cleanup failed\" err=%q", err.Error())
+		slog.Error("list stacks for orphan pod cleanup failed", slog.Any("error", err))
 	} else {
 		podIDs, podErr := s.k8s.ListPods(ctx, s.cfg.Namespace)
 		if podErr != nil {
 			resourceScanErrors++
 			failures++
-			log.Printf("level=ERROR msg=\"list kubernetes pods for stack resource integrity failed\" namespace=%s err=%q", s.cfg.Namespace, podErr.Error())
+			slog.Error("list kubernetes pods for stack resource integrity failed", slog.String("namespace", s.cfg.Namespace), slog.Any("error", podErr))
 		}
 
 		serviceNames, svcErr := s.k8s.ListServices(ctx, s.cfg.Namespace)
 		if svcErr != nil {
 			resourceScanErrors++
 			failures++
-			log.Printf("level=ERROR msg=\"list kubernetes services for stack resource integrity failed\" namespace=%s err=%q", s.cfg.Namespace, svcErr.Error())
+			slog.Error("list kubernetes services for stack resource integrity failed", slog.String("namespace", s.cfg.Namespace), slog.Any("error", svcErr))
 		}
 
 		if podErr == nil && svcErr == nil {
@@ -391,12 +399,12 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 				missingResourceTargets++
 				failed := false
 				if err := s.k8s.DeletePodAndService(ctx, st.Namespace, st.PodID, st.ServiceName); err != nil {
-					log.Printf("level=ERROR msg=\"cleanup delete stale stack resources failed\" stack_id=%s pod_id=%s service_name=%s err=%q", st.StackID, st.PodID, st.ServiceName, err.Error())
+					slog.Error("cleanup delete stale stack resources failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", err))
 					failed = true
 				}
 
 				if _, _, err := s.repo.Delete(ctx, st.StackID); err != nil {
-					log.Printf("level=ERROR msg=\"cleanup delete stack with missing pod/service failed\" stack_id=%s pod_exists=%t service_exists=%t err=%q", st.StackID, podExists, serviceExists, err.Error())
+					slog.Error("cleanup delete stack with missing pod/service failed", slog.String("stack_id", st.StackID), slog.Bool("pod_exists", podExists), slog.Bool("service_exists", serviceExists), slog.Any("error", err))
 					failed = true
 				}
 
@@ -412,7 +420,7 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 		if err != nil {
 			orphanScanErrors++
 			failures++
-			log.Printf("level=ERROR msg=\"list stacks after resource integrity cleanup failed\" err=%q", err.Error())
+			slog.Error("list stacks after resource integrity cleanup failed", slog.Any("error", err))
 		} else {
 			registeredPods := make(map[string]struct{}, len(remainingStacks))
 			for _, st := range remainingStacks {
@@ -427,7 +435,7 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 			if err != nil {
 				orphanScanErrors++
 				failures++
-				log.Printf("level=ERROR msg=\"list kubernetes pods for orphan cleanup failed\" namespace=%s err=%q", s.cfg.Namespace, err.Error())
+				slog.Error("list kubernetes pods for orphan cleanup failed", slog.String("namespace", s.cfg.Namespace), slog.Any("error", err))
 			} else {
 				for _, podID := range podIDs {
 					if _, ok := registeredPods[podID]; ok {
@@ -437,7 +445,7 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 					orphanPodTargets++
 					if err := s.k8s.DeletePodAndService(ctx, s.cfg.Namespace, podID, ""); err != nil {
 						failures++
-						log.Printf("level=ERROR msg=\"cleanup delete orphan pod failed\" namespace=%s pod_id=%s err=%q", s.cfg.Namespace, podID, err.Error())
+						slog.Error("cleanup delete orphan pod failed", slog.String("namespace", s.cfg.Namespace), slog.String("pod_id", podID), slog.Any("error", err))
 						continue
 					}
 
@@ -449,22 +457,29 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 
 	targets := expiredTargets + missingResourceTargets + orphanPodTargets
 	if targets == 0 {
-		log.Printf("level=INFO msg=\"cleanup loop completed\" scanned=%d targets=0 cleaned=0 failures=%d resource_scan_errors=%d orphan_scan_errors=%d note=%q", scanned, failures, resourceScanErrors, orphanScanErrors, "no cleanup candidates")
+		slog.Info("cleanup loop completed",
+			slog.Int("scanned", scanned),
+			slog.Int("targets", 0),
+			slog.Int("cleaned", 0),
+			slog.Int("failures", failures),
+			slog.Int("resource_scan_errors", resourceScanErrors),
+			slog.Int("orphan_scan_errors", orphanScanErrors),
+			slog.String("note", "no cleanup candidates"),
+		)
 
 		return
 	}
 
-	log.Printf(
-		"level=INFO msg=\"cleanup loop completed\" scanned=%d targets=%d expired_targets=%d missing_resource_targets=%d orphan_pod_targets=%d cleaned=%d failures=%d resource_scan_errors=%d orphan_scan_errors=%d",
-		scanned,
-		targets,
-		expiredTargets,
-		missingResourceTargets,
-		orphanPodTargets,
-		cleaned,
-		failures,
-		resourceScanErrors,
-		orphanScanErrors,
+	slog.Info("cleanup loop completed",
+		slog.Int("scanned", scanned),
+		slog.Int("targets", targets),
+		slog.Int("expired_targets", expiredTargets),
+		slog.Int("missing_resource_targets", missingResourceTargets),
+		slog.Int("orphan_pod_targets", orphanPodTargets),
+		slog.Int("cleaned", cleaned),
+		slog.Int("failures", failures),
+		slog.Int("resource_scan_errors", resourceScanErrors),
+		slog.Int("orphan_scan_errors", orphanScanErrors),
 	)
 }
 

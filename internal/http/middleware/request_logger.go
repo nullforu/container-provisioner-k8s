@@ -2,12 +2,12 @@ package middleware
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
+
+	"log/slog"
 
 	"smctf/internal/config"
 	"smctf/internal/logging"
@@ -23,7 +23,12 @@ var bodyLogMethods = map[string]struct{}{
 
 func RequestLogger(cfg config.LoggingConfig, logger *logging.Logger) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		start := time.Now()
+		var log *slog.Logger
+		if logger != nil {
+			log = logger.Logger
+		}
+
+		start := time.Now().UTC()
 
 		_, bodyStr := readRequestBody(ctx, cfg.MaxBodyBytes)
 
@@ -39,51 +44,53 @@ func RequestLogger(cfg config.LoggingConfig, logger *logging.Logger) gin.Handler
 		contentType := ctx.GetHeader("Content-Type")
 		contentLength := ctx.Request.ContentLength
 		errStr := strings.TrimSpace(ctx.Errors.ByType(gin.ErrorTypeAny).String())
-		level := "INFO"
-		if status >= http.StatusBadRequest || errStr != "" {
-			level = "ERROR"
-		}
 
-		var b strings.Builder
-		b.Grow(256 + len(bodyStr))
-		fmt.Fprintf(&b, "ts=%s level=%s msg=\"http request\" method=%s path=%s status=%d latency=%s ip=%s",
-			start.UTC().Format(time.RFC3339Nano),
-			level,
-			method,
-			path,
-			status,
-			latency,
-			clientIP,
+		attrs := make([]slog.Attr, 0, 12)
+		attrs = append(attrs,
+			slog.String("method", method),
+			slog.String("path", path),
+			slog.Int("status", status),
+			slog.Duration("latency", latency),
+			slog.String("ip", clientIP),
 		)
 
 		if rawQuery != "" {
-			fmt.Fprintf(&b, " query=%s", strconv.Quote(rawQuery))
+			attrs = append(attrs, slog.String("query", rawQuery))
 		}
 
 		if userAgent != "" {
-			fmt.Fprintf(&b, " ua=%s", strconv.Quote(userAgent))
+			attrs = append(attrs, slog.String("user_agent", userAgent))
 		}
 
 		if contentType != "" {
-			fmt.Fprintf(&b, " content_type=%s", strconv.Quote(contentType))
+			attrs = append(attrs, slog.String("content_type", contentType))
 		}
 
 		if contentLength >= 0 {
-			fmt.Fprintf(&b, " content_length=%d", contentLength)
+			attrs = append(attrs, slog.Int64("content_length", contentLength))
 		}
 
 		if bodyStr != "" {
-			fmt.Fprintf(&b, " body=%s", strconv.Quote(bodyStr))
+			attrs = append(attrs, slog.String("body", bodyStr))
 		}
 
 		if errStr != "" {
-			fmt.Fprintf(&b, " error=%s", strconv.Quote(errStr))
+			attrs = append(attrs, slog.String("error", errStr))
 		}
 
-		if logger != nil {
-			_, _ = logger.Write([]byte(b.String() + "\n"))
-		}
+		if log != nil {
+			anyAttrs := make([]any, 0, len(attrs))
+			for _, attr := range attrs {
+				anyAttrs = append(anyAttrs, attr)
+			}
 
+			if status >= http.StatusBadRequest || errStr != "" {
+				log.Error("http request", slog.Group("http", anyAttrs...))
+				return
+			}
+
+			log.Info("http request", slog.Group("http", anyAttrs...))
+		}
 	}
 }
 
@@ -96,16 +103,17 @@ func readRequestBody(ctx *gin.Context, maxBodyBytes int) ([]byte, string) {
 		return nil, ""
 	}
 
-	bodyBytes, err := io.ReadAll(ctx.Request.Body)
+	limited := io.LimitReader(ctx.Request.Body, int64(maxBodyBytes))
+	bodyBytes, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, ""
 	}
 
-	ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	ctx.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	bodyStr := string(bodyBytes)
-	if maxBodyBytes > 0 && len(bodyStr) > maxBodyBytes {
-		bodyStr = bodyStr[:maxBodyBytes] + "...(truncated)"
+	if maxBodyBytes > 0 && len(bodyStr) == maxBodyBytes {
+		bodyStr = bodyStr + "...(truncated)"
 	}
 
 	return bodyBytes, bodyStr

@@ -1,13 +1,13 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"smctf/internal/config"
 	"smctf/internal/logging"
@@ -20,15 +20,10 @@ func TestRequestLoggerSkipsBodyForGET(t *testing.T) {
 	dir := t.TempDir()
 
 	logger, err := logging.New(config.LoggingConfig{
-		Dir:              dir,
-		FilePrefix:       "req",
-		MaxBodyBytes:     1024,
-		WebhookQueueSize: 10,
-		WebhookTimeout:   time.Second,
-		WebhookBatchSize: 1,
-		WebhookBatchWait: time.Millisecond,
-		WebhookMaxChars:  1000,
-	})
+		Dir:          dir,
+		FilePrefix:   "req",
+		MaxBodyBytes: 1024,
+	}, logging.Options{Service: "container-provisioner", Env: "test"})
 	if err != nil {
 		t.Fatalf("logger init: %v", err)
 	}
@@ -52,13 +47,14 @@ func TestRequestLoggerSkipsBodyForGET(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 
-	line := readLogLine(t, dir, "req")
-	if strings.Contains(line, "body=") {
-		t.Fatalf("expected no body in log: %s", line)
+	payload := readLogLine(t, dir, "req")
+	httpFields := extractGroup(t, payload, "http")
+	if _, ok := httpFields["body"]; ok {
+		t.Fatalf("expected no body in log: %v", httpFields)
 	}
 }
 
-func readLogLine(t *testing.T, dir, prefix string) string {
+func readLogLine(t *testing.T, dir, prefix string) map[string]any {
 	t.Helper()
 
 	matches, err := filepath.Glob(filepath.Join(dir, prefix+"-*.log"))
@@ -76,5 +72,26 @@ func readLogLine(t *testing.T, dir, prefix string) string {
 		t.Fatalf("no log lines found")
 	}
 
-	return lines[len(lines)-1]
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &payload); err != nil {
+		t.Fatalf("invalid json log: %v", err)
+	}
+
+	return payload
+}
+
+func extractGroup(t *testing.T, payload map[string]any, key string) map[string]any {
+	t.Helper()
+
+	value, ok := payload[key]
+	if !ok {
+		t.Fatalf("missing group %s in log: %v", key, payload)
+	}
+
+	group, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("invalid group %s in log: %T", key, value)
+	}
+
+	return group
 }

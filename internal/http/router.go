@@ -3,9 +3,8 @@ package http
 import (
 	"context"
 	"fmt"
-	"io"
+	"log/slog"
 	nethttp "net/http"
-	"os"
 
 	"smctf/internal/config"
 	"smctf/internal/http/handlers"
@@ -14,6 +13,7 @@ import (
 	"smctf/internal/stack"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (*gin.Engine, error) {
@@ -21,9 +21,9 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	var log *slog.Logger
 	if logger != nil {
-		gin.DefaultWriter = io.MultiWriter(os.Stdout, logger)
-		gin.DefaultErrorWriter = io.MultiWriter(os.Stderr, logger)
+		log = logger.Logger
 	}
 
 	repo, err := stack.NewRepositoryFromConfig(ctx, cfg.Stack)
@@ -48,9 +48,11 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 	}
 
 	if count, err := k8s.CountSchedulableNodes(ctx); err != nil {
-		fmt.Printf("level=WARN msg=\"count schedulable nodes failed\" err=%q\n", err.Error())
-	} else {
-		fmt.Printf("level=INFO msg=\"schedulable nodes detected\" count=%d role=%s\n", count, cfg.Stack.StackNodeRole)
+		if log != nil {
+			log.Warn("count schedulable nodes failed", slog.Any("error", err))
+		}
+	} else if log != nil {
+		log.Info("schedulable nodes detected", slog.Int("count", count), slog.String("role", cfg.Stack.StackNodeRole))
 	}
 
 	service := stack.NewService(cfg.Stack, repo, k8s)
@@ -60,12 +62,13 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 	h := handlers.New(service)
 
 	r := gin.New()
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
+	r.Use(middleware.RecoveryLogger(logger))
 	r.Use(middleware.RequestLogger(cfg.Logging, logger))
 
-	if !cfg.APIKey.Enabled {
-		fmt.Printf("level=WARN msg=\"api key auth disabled\"\n")
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	if !cfg.APIKey.Enabled && log != nil {
+		log.Warn("api key auth disabled")
 	}
 
 	api := r.Group("/")
