@@ -12,9 +12,6 @@ import (
 
 func TestServiceCreateAndDelete(t *testing.T) {
 	repo := NewInMemoryRepository(1)
-	if _, err := repo.ReserveNodePort(context.Background(), 30000, 30000); err != nil {
-		t.Fatalf("reserve nodeport error: %v", err)
-	}
 	k8s := NewMockKubernetesClient(1)
 	svc := NewService(config.StackConfig{
 		Namespace:         "stacks",
@@ -489,6 +486,248 @@ func TestCleanupOrphanPodSkipsRepoBackedPods(t *testing.T) {
 
 	if k8s.listPodsWithCreationCalls == 0 {
 		t.Fatalf("expected ListPodsWithCreation to be called")
+	}
+}
+
+type batchDeleteKubernetesClient struct {
+	deleteCalls int
+}
+
+func (b *batchDeleteKubernetesClient) CreatePodAndService(_ context.Context, _ ProvisionRequest) (ProvisionResult, error) {
+	return ProvisionResult{}, nil
+}
+
+func (b *batchDeleteKubernetesClient) DeletePodAndService(_ context.Context, _, _, _ string) error {
+	b.deleteCalls++
+	return nil
+}
+
+func (b *batchDeleteKubernetesClient) GetPodStatus(_ context.Context, _, _ string) (Status, string, error) {
+	return StatusRunning, "worker-a", nil
+}
+
+func (b *batchDeleteKubernetesClient) ListPods(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (b *batchDeleteKubernetesClient) ListPodsWithCreation(_ context.Context, _ string) (map[string]PodInfo, error) {
+	return map[string]PodInfo{}, nil
+}
+
+func (b *batchDeleteKubernetesClient) ListServices(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (b *batchDeleteKubernetesClient) NodeExists(_ context.Context, _ string) (bool, error) {
+	return true, nil
+}
+
+func (b *batchDeleteKubernetesClient) HasIngressNetworkPolicy(_ context.Context) (bool, error) {
+	return true, nil
+}
+
+func (b *batchDeleteKubernetesClient) GetNodePublicIP(_ context.Context, _ string) (*string, error) {
+	return nil, nil
+}
+
+func (b *batchDeleteKubernetesClient) CountSchedulableNodes(_ context.Context) (int, error) {
+	return 0, nil
+}
+
+func TestBatchDeleteHappyPath(t *testing.T) {
+	repo := NewInMemoryRepository(1)
+	k8s := &batchDeleteKubernetesClient{}
+	svc := NewService(config.StackConfig{
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
+	}, repo, k8s)
+
+	if _, err := repo.ReserveNodePort(context.Background(), 30000, 30000); err != nil {
+		t.Fatalf("reserve nodeport error: %v", err)
+	}
+	if _, err := repo.ReserveNodePort(context.Background(), 30001, 30001); err != nil {
+		t.Fatalf("reserve nodeport error: %v", err)
+	}
+
+	stack1 := Stack{
+		StackID:        "stack-1",
+		PodID:          "pod-1",
+		Namespace:      "stacks",
+		ServiceName:    "svc-1",
+		Status:         StatusRunning,
+		CreatedAt:      time.Now().UTC().Add(-10 * time.Minute),
+		UpdatedAt:      time.Now().UTC().Add(-10 * time.Minute),
+		TTLExpiresAt:   time.Now().UTC().Add(10 * time.Minute),
+		RequestedMilli: 100,
+		RequestedBytes: 1024,
+		Ports: []PortMapping{
+			{ContainerPort: 8080, Protocol: "TCP", NodePort: 30000},
+		},
+	}
+
+	stack2 := Stack{
+		StackID:        "stack-2",
+		PodID:          "pod-2",
+		Namespace:      "stacks",
+		ServiceName:    "svc-2",
+		Status:         StatusRunning,
+		CreatedAt:      time.Now().UTC().Add(-10 * time.Minute),
+		UpdatedAt:      time.Now().UTC().Add(-10 * time.Minute),
+		TTLExpiresAt:   time.Now().UTC().Add(10 * time.Minute),
+		RequestedMilli: 100,
+		RequestedBytes: 1024,
+		Ports: []PortMapping{
+			{ContainerPort: 8080, Protocol: "TCP", NodePort: 30001},
+		},
+	}
+
+	if err := repo.Create(context.Background(), stack1); err != nil {
+		t.Fatalf("create repo stack error: %v", err)
+	}
+
+	if err := repo.Create(context.Background(), stack2); err != nil {
+		t.Fatalf("create repo stack error: %v", err)
+	}
+
+	jobID, err := svc.StartBatchDelete(context.Background(), []string{"stack-1", "stack-2"})
+	if err != nil {
+		t.Fatalf("start batch delete error: %v", err)
+	}
+
+	var job BatchDeleteJob
+	for i := 0; i < 50; i++ {
+		job, err = svc.GetBatchDeleteJob(context.Background(), jobID)
+		if err != nil {
+			t.Fatalf("get job error: %v", err)
+		}
+
+		if job.Status == JobStatusCompleted {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if job.Status != JobStatusCompleted {
+		t.Fatalf("expected completed status, got %s", job.Status)
+	}
+
+	if job.Deleted != 2 || job.NotFound != 0 || job.Failed != 0 {
+		t.Fatalf("unexpected job counts: %+v", job)
+	}
+
+	if k8s.deleteCalls != 2 {
+		t.Fatalf("expected 2 delete calls, got %d", k8s.deleteCalls)
+	}
+}
+
+func TestBatchDeleteNotFound(t *testing.T) {
+	repo := NewInMemoryRepository(1)
+	k8s := &batchDeleteKubernetesClient{}
+	svc := NewService(config.StackConfig{
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
+	}, repo, k8s)
+
+	jobID, err := svc.StartBatchDelete(context.Background(), []string{"missing-stack"})
+	if err != nil {
+		t.Fatalf("start batch delete error: %v", err)
+	}
+
+	var job BatchDeleteJob
+	for i := 0; i < 50; i++ {
+		job, err = svc.GetBatchDeleteJob(context.Background(), jobID)
+		if err != nil {
+			t.Fatalf("get job error: %v", err)
+		}
+
+		if job.Status == JobStatusCompleted {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if job.NotFound != 1 || job.Deleted != 0 {
+		t.Fatalf("unexpected job counts: %+v", job)
+	}
+}
+
+type failingDeleteRepo struct {
+	*InMemoryRepository
+}
+
+func (f *failingDeleteRepo) Delete(_ context.Context, stackID string) (Stack, bool, error) {
+	return Stack{}, false, fmt.Errorf("forced delete error for %s", stackID)
+}
+
+func TestBatchDeleteAllFailed(t *testing.T) {
+	baseRepo := NewInMemoryRepository(1)
+	repo := &failingDeleteRepo{InMemoryRepository: baseRepo}
+	k8s := &batchDeleteKubernetesClient{}
+	svc := NewService(config.StackConfig{
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
+	}, repo, k8s)
+
+	if _, err := baseRepo.ReserveNodePort(context.Background(), 30000, 30000); err != nil {
+		t.Fatalf("reserve nodeport error: %v", err)
+	}
+
+	stack1 := Stack{
+		StackID:        "stack-1",
+		PodID:          "pod-1",
+		Namespace:      "stacks",
+		ServiceName:    "svc-1",
+		Status:         StatusRunning,
+		CreatedAt:      time.Now().UTC().Add(-10 * time.Minute),
+		UpdatedAt:      time.Now().UTC().Add(-10 * time.Minute),
+		TTLExpiresAt:   time.Now().UTC().Add(10 * time.Minute),
+		RequestedMilli: 100,
+		RequestedBytes: 1024,
+		Ports: []PortMapping{
+			{ContainerPort: 8080, Protocol: "TCP", NodePort: 30000},
+		},
+	}
+
+	if err := baseRepo.Create(context.Background(), stack1); err != nil {
+		t.Fatalf("create repo stack error: %v", err)
+	}
+
+	jobID, err := svc.StartBatchDelete(context.Background(), []string{"stack-1"})
+	if err != nil {
+		t.Fatalf("start batch delete error: %v", err)
+	}
+
+	var job BatchDeleteJob
+	for i := 0; i < 50; i++ {
+		job, err = svc.GetBatchDeleteJob(context.Background(), jobID)
+		if err != nil {
+			t.Fatalf("get job error: %v", err)
+		}
+
+		if job.Status == JobStatusFailed {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if job.Status != JobStatusFailed {
+		t.Fatalf("expected failed status, got %s", job.Status)
+	}
+
+	if job.Failed != 1 {
+		t.Fatalf("expected failed count=1, got %d", job.Failed)
 	}
 }
 

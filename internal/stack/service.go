@@ -357,13 +357,21 @@ func (s *Service) GetBatchDeleteJob(ctx context.Context, jobID string) (BatchDel
 func (s *Service) runBatchDelete(jobID string, stackIDs []string) {
 	ctx := context.Background()
 	job, ok, err := s.repo.GetBatchDeleteJob(ctx, jobID)
-	if err != nil || !ok {
+	if err != nil {
+		slog.Error("batch delete job fetch failed", slog.String("job_id", jobID), slog.Any("error", err))
+		return
+	}
+
+	if !ok {
+		slog.Error("batch delete job not found", slog.String("job_id", jobID))
 		return
 	}
 
 	job.Status = JobStatusRunning
 	job.UpdatedAt = s.now()
-	_ = s.repo.UpdateBatchDeleteJob(ctx, job)
+	if err := s.repo.UpdateBatchDeleteJob(ctx, job); err != nil {
+		slog.Error("batch delete job update failed", slog.String("job_id", jobID), slog.Any("error", err))
+	}
 
 	for _, stackID := range stackIDs {
 		err := s.Delete(ctx, stackID)
@@ -374,15 +382,26 @@ func (s *Service) runBatchDelete(jobID string, stackIDs []string) {
 			job.NotFound++
 		default:
 			job.Failed++
-			job.Errors = append(job.Errors, JobError{StackID: stackID, Error: err.Error()})
+			if len(job.Errors) < maxJobErrors {
+				job.Errors = append(job.Errors, JobError{StackID: stackID, Error: truncateError(err.Error())})
+			}
 		}
+
 		job.UpdatedAt = s.now()
-		_ = s.repo.UpdateBatchDeleteJob(ctx, job)
+		if err := s.repo.UpdateBatchDeleteJob(ctx, job); err != nil {
+			slog.Error("batch delete job progress update failed", slog.String("job_id", jobID), slog.Any("error", err))
+		}
 	}
 
-	job.Status = JobStatusCompleted
+	if job.Failed > 0 && job.Deleted == 0 && job.NotFound == 0 {
+		job.Status = JobStatusFailed
+	} else {
+		job.Status = JobStatusCompleted
+	}
 	job.UpdatedAt = s.now()
-	_ = s.repo.UpdateBatchDeleteJob(ctx, job)
+	if err := s.repo.UpdateBatchDeleteJob(ctx, job); err != nil {
+		slog.Error("batch delete job completion update failed", slog.String("job_id", jobID), slog.Any("error", err))
+	}
 }
 
 func (s *Service) attachNodePublicIP(ctx context.Context, st *Stack) {
@@ -692,6 +711,16 @@ func isQuotaExceededMessage(msg string) bool {
 	return strings.Contains(msg, "exceeded quota") ||
 		strings.Contains(msg, "exceeds quota") ||
 		strings.Contains(msg, "resourcequota")
+}
+
+const maxJobErrors = 100
+
+func truncateError(msg string) string {
+	const maxLen = 512
+	if len(msg) <= maxLen {
+		return msg
+	}
+	return msg[:maxLen] + "..."
 }
 
 func isLimitRangeExceededMessage(msg string) bool {

@@ -120,10 +120,6 @@ func (r *InMemoryRepository) ReserveNodePort(_ context.Context, min, max int) (i
 		return 0, ErrNoAvailableNodePort
 	}
 
-	if len(r.ports) >= total {
-		return 0, ErrNoAvailableNodePort
-	}
-
 	start := min + r.rand.Intn(total)
 	for i := range total {
 		port := min + ((start - min + i) % total)

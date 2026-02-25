@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"smctf/internal/stack"
 
@@ -98,7 +99,25 @@ func (h *Handler) CreateBatchDeleteJob(c *gin.Context) {
 		return
 	}
 
-	jobID, err := h.svc.StartBatchDelete(c.Request.Context(), req.StackIDs)
+	clean := make([]string, 0, len(req.StackIDs))
+	seen := make(map[string]struct{}, len(req.StackIDs))
+	for _, id := range req.StackIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			_ = c.Error(fmt.Errorf("bind batch delete request: empty stack_id"))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid stack_ids"})
+			return
+		}
+
+		if _, ok := seen[id]; ok {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+
+	jobID, err := h.svc.StartBatchDelete(c.Request.Context(), clean)
 	if err != nil {
 		h.writeError(c, err)
 		return

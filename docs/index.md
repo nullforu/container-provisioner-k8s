@@ -237,6 +237,7 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
 
 Batch delete jobs run asynchronously. Use the job status API to track progress.
 Deletes are processed sequentially and can take time for large batches.
+`errors` is capped to the first 100 failures and each error message is truncated to 512 characters.
 
 ### Get Batch Delete Job
 
@@ -265,7 +266,7 @@ Deletes are processed sequentially and can take time for large batches.
 - `queued`: job accepted and waiting to start
 - `running`: job is in progress
 - `completed`: job finished (check counts + errors)
-- `failed`: job failed before completing (check errors)
+- `failed`: all deletes failed (no success or not_found)
 
 **Fields**
 
@@ -274,7 +275,7 @@ Deletes are processed sequentially and can take time for large batches.
 - `not_found`: stack IDs that did not exist
 - `failed`: deletes that returned errors
 - `errors`: list of `{stack_id, error}` for failures. Omitted when empty.
-- `created_at`/`updated_at`: RFC3339 timestamps
+- `created_at`/`updated_at`: RFC3339 timestamps with nanosecond precision (RFC3339Nano)
 
 **Errors format**
 
