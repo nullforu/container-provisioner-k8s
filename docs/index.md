@@ -211,6 +211,103 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
 }
 ```
 
+### Batch Delete Stacks (Async)
+
+- `POST /stacks/batch-delete`
+- Body
+
+```json
+{
+    "stack_ids": ["stack-1", "stack-2", "stack-3"]
+}
+```
+
+- Success:
+    - `202 Accepted`
+- Failure:
+    - `400 Bad Request` (invalid request body)
+
+**Response**
+
+```json
+{
+    "job_id": "job-abc123"
+}
+```
+
+Batch delete jobs run asynchronously. Use the job status API to track progress.
+Deletes are processed sequentially and can take time for large batches.
+
+### Get Batch Delete Job
+
+- `GET /stacks/batch-delete/{job_id}`
+- Success: `200 OK`
+- Failure: `404 Not Found` (job not found)
+
+**Response**
+
+```json
+{
+    "job_id": "job-abc123",
+    "status": "completed",
+    "total": 3,
+    "deleted": 2,
+    "not_found": 1,
+    "failed": 0,
+    "errors": [],
+    "created_at": "2026-02-10T02:02:26.535664Z",
+    "updated_at": "2026-02-10T02:03:10.535664Z"
+}
+```
+
+**Job status values**
+
+- `queued`: job accepted and waiting to start
+- `running`: job is in progress
+- `completed`: job finished (check counts + errors)
+- `failed`: job failed before completing (check errors)
+
+**Fields**
+
+- `total`: number of stack IDs requested
+- `deleted`: successfully deleted stacks
+- `not_found`: stack IDs that did not exist
+- `failed`: deletes that returned errors
+- `errors`: list of `{stack_id, error}` for failures. Omitted when empty.
+- `created_at`/`updated_at`: RFC3339 timestamps
+
+**Errors format**
+
+Each item in `errors` is:
+
+```json
+{
+    "stack_id": "stack-abc123",
+    "error": "k8s provision failed: ... (or repository error message)"
+}
+```
+
+Example failure response:
+
+```json
+{
+    "job_id": "job-abc123",
+    "status": "completed",
+    "total": 2,
+    "deleted": 1,
+    "not_found": 0,
+    "failed": 1,
+    "errors": [
+        {
+            "stack_id": "stack-bad",
+            "error": "delete pod/service failed: ..."
+        }
+    ],
+    "created_at": "2026-02-10T02:02:26.535664Z",
+    "updated_at": "2026-02-10T02:03:10.535664Z"
+}
+```
+
 ## Stack statuses
 
 - `creating`: the stack is being created. The pod may not be running yet.
