@@ -23,6 +23,7 @@ type podState struct {
 	service   string
 	nodeID    string
 	status    Status
+	createdAt time.Time
 }
 
 func NewMockKubernetesClient(seed int64) *MockKubernetesClient {
@@ -56,14 +57,21 @@ func (m *MockKubernetesClient) CreatePodAndService(_ context.Context, req Provis
 		return ProvisionResult{}, err
 	}
 
-	podID := fmt.Sprintf("stack-%s", req.StackID)
+	podName := req.PodName
+	if podName == "" {
+		podName = req.StackID
+	}
+
+	podID := fmt.Sprintf("stack-%s", podName)
 	serviceName := fmt.Sprintf("svc-%s", req.StackID)
+
 	m.pods[podID] = podState{
 		namespace: req.Namespace,
 		podID:     podID,
 		service:   serviceName,
 		nodeID:    nodeID,
 		status:    StatusRunning,
+		createdAt: time.Now().UTC(),
 	}
 	m.services[serviceName] = req.Namespace
 
@@ -130,6 +138,19 @@ func (m *MockKubernetesClient) ListPods(_ context.Context, namespace string) ([]
 	for _, p := range m.pods {
 		if p.namespace == namespace {
 			out = append(out, p.podID)
+		}
+	}
+	return out, nil
+}
+
+func (m *MockKubernetesClient) ListPodsWithCreation(_ context.Context, namespace string) (map[string]time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make(map[string]time.Time)
+	for _, p := range m.pods {
+		if p.namespace == namespace {
+			out[p.podID] = p.createdAt
 		}
 	}
 	return out, nil

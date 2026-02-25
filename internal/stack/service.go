@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"smctf/internal/config"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type Service struct {
@@ -70,9 +72,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Stack, error) {
 			RequestedBytes: valid.RequestedBytes,
 		}
 
+		podName := stackID
+		if attempt > 0 {
+			podName = fmt.Sprintf("%s-retry-%d", stackID, attempt)
+		}
+
 		result, err := s.k8s.CreatePodAndService(ctx, ProvisionRequest{
 			Namespace:  s.cfg.Namespace,
 			StackID:    stackID,
+			PodName:    podName,
 			PodSpecYML: valid.SanitizedYAML,
 			Ports:      ports,
 		})
@@ -260,6 +268,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Stack, error) {
 			if errors.Is(err, ErrNotFound) {
 				continue
 			}
+
 			return nil, err
 		}
 
@@ -267,6 +276,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Stack, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if !ok {
 			continue
 		}
@@ -446,14 +456,21 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 				registeredPods[st.PodID] = struct{}{}
 			}
 
-			podIDs, err := s.k8s.ListPods(ctx, s.cfg.Namespace)
+			podsWithCreation, err := s.k8s.ListPodsWithCreation(ctx, s.cfg.Namespace)
 			if err != nil {
 				orphanScanErrors++
 				failures++
 				slog.Error("list kubernetes pods for orphan cleanup failed", slog.String("namespace", s.cfg.Namespace), slog.Any("error", err))
 			} else {
-				for _, podID := range podIDs {
+				graceCutoff := now.Add(-2 * time.Minute)
+
+				for podID, createdAt := range podsWithCreation {
 					if _, ok := registeredPods[podID]; ok {
+						continue
+					}
+
+					if !createdAt.IsZero() && createdAt.After(graceCutoff) {
+						slog.Info("skipping orphan pod cleanup for recently created pod", slog.String("pod_id", podID), slog.Time("created_at", createdAt), slog.Time("grace_cutoff", graceCutoff))
 						continue
 					}
 
@@ -562,9 +579,23 @@ func isNodePortAllocatedError(err error) bool {
 	if err == nil {
 		return false
 	}
+	var status apierrors.APIStatus
+	if errors.As(err, &status) {
+		details := status.Status().Details
+		if details != nil {
+			for _, cause := range details.Causes {
+				if cause.Type == "FieldValueInvalid" && strings.Contains(cause.Field, "spec.ports") {
+					msg := strings.ToLower(cause.Message)
+					if strings.Contains(msg, "already allocated") {
+						return true
+					}
+				}
+			}
+		}
+	}
 
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "provided port is already allocated")
+	return strings.Contains(msg, "provided port is already allocated") || strings.Contains(msg, "already allocated")
 }
 
 func isQuotaExceededMessage(msg string) bool {

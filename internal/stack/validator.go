@@ -26,6 +26,8 @@ type ValidationResult struct {
 	TargetPorts    []PortSpec
 }
 
+const maxTargetPorts = 24
+
 func (v *Validator) ValidatePodSpec(raw string, targetPorts []PortSpec) (ValidationResult, error) {
 	if strings.TrimSpace(raw) == "" {
 		return ValidationResult{}, fmt.Errorf("%w: pod_spec is required", ErrPodSpecInvalid)
@@ -33,6 +35,10 @@ func (v *Validator) ValidatePodSpec(raw string, targetPorts []PortSpec) (Validat
 
 	if len(targetPorts) == 0 {
 		return ValidationResult{}, fmt.Errorf("%w: target_port is required", ErrInvalidInput)
+	}
+
+	if len(targetPorts) > maxTargetPorts {
+		return ValidationResult{}, fmt.Errorf("%w: target_port exceeds limit", ErrInvalidInput)
 	}
 
 	normalizedTargets := make([]PortSpec, 0, len(targetPorts))

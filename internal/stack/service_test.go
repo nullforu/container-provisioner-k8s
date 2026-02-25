@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -69,6 +70,157 @@ spec:
 	}
 }
 
+func TestServiceCreateWithMultiplePorts(t *testing.T) {
+	repo := NewInMemoryRepository(1)
+	k8s := NewMockKubernetesClient(1)
+	svc := NewService(config.StackConfig{
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
+	}, repo, k8s)
+
+	st, err := svc.Create(context.Background(), CreateInput{
+		TargetPorts: []PortSpec{
+			{ContainerPort: 5000, Protocol: "TCP"},
+			{ContainerPort: 5001, Protocol: "UDP"},
+		},
+		PodSpecYML: `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: p
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 5000
+          protocol: TCP
+        - containerPort: 5001
+          protocol: UDP
+      resources:
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+`,
+	})
+	if err != nil {
+		t.Fatalf("create error: %v", err)
+	}
+
+	if len(st.Ports) != 2 {
+		t.Fatalf("expected 2 port mappings, got %d", len(st.Ports))
+	}
+
+	if st.Ports[0].NodePort == st.Ports[1].NodePort {
+		t.Fatalf("expected distinct node ports")
+	}
+}
+
+type retryingKubernetesClient struct {
+	attempts int
+}
+
+func (r *retryingKubernetesClient) CreatePodAndService(_ context.Context, _ ProvisionRequest) (ProvisionResult, error) {
+	r.attempts++
+	if r.attempts == 1 {
+		return ProvisionResult{}, fmt.Errorf("provided port is already allocated")
+	}
+
+	return ProvisionResult{
+		PodID:       "pod-ok",
+		ServiceName: "svc-ok",
+		NodeID:      "worker-a",
+		Status:      StatusRunning,
+	}, nil
+}
+
+func (r *retryingKubernetesClient) DeletePodAndService(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (r *retryingKubernetesClient) GetPodStatus(_ context.Context, _, _ string) (Status, string, error) {
+	return StatusRunning, "worker-a", nil
+}
+
+func (r *retryingKubernetesClient) ListPods(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (r *retryingKubernetesClient) ListPodsWithCreation(_ context.Context, _ string) (map[string]time.Time, error) {
+	return map[string]time.Time{}, nil
+}
+
+func (r *retryingKubernetesClient) ListServices(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (r *retryingKubernetesClient) NodeExists(_ context.Context, _ string) (bool, error) {
+	return true, nil
+}
+
+func (r *retryingKubernetesClient) HasIngressNetworkPolicy(_ context.Context) (bool, error) {
+	return true, nil
+}
+
+func (r *retryingKubernetesClient) GetNodePublicIP(_ context.Context, _ string) (*string, error) {
+	return nil, nil
+}
+
+func (r *retryingKubernetesClient) CountSchedulableNodes(_ context.Context) (int, error) {
+	return 1, nil
+}
+
+func TestServiceCreateRetriesOnNodePortAllocated(t *testing.T) {
+	repo := NewInMemoryRepository(1)
+	k8s := &retryingKubernetesClient{}
+	svc := NewService(config.StackConfig{
+		Namespace:         "stacks",
+		StackTTL:          time.Hour,
+		SchedulerInterval: time.Second,
+		NodePortMin:       30000,
+		NodePortMax:       30010,
+	}, repo, k8s)
+
+	st, err := svc.Create(context.Background(), CreateInput{
+		TargetPorts: []PortSpec{{ContainerPort: 5000, Protocol: "TCP"}},
+		PodSpecYML: `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: p
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 5000
+      resources:
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+`,
+	})
+	if err != nil {
+		t.Fatalf("create error: %v", err)
+	}
+
+	if k8s.attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", k8s.attempts)
+	}
+
+	used, err := repo.UsedNodePortCount(context.Background())
+	if err != nil {
+		t.Fatalf("used node ports error: %v", err)
+	}
+
+	if used != len(st.Ports) {
+		t.Fatalf("expected %d used ports, got %d", len(st.Ports), used)
+	}
+}
+
 func TestCleanupRemovesOnlyPodsMissingFromRepository(t *testing.T) {
 	repo := NewInMemoryRepository(1)
 	k8s := NewMockKubernetesClient(1)
@@ -110,6 +262,7 @@ spec:
 		service:   "svc-orphan-pod",
 		nodeID:    "worker-a",
 		status:    StatusRunning,
+		createdAt: time.Now().UTC().Add(-3 * time.Minute),
 	}
 	k8s.pods["other-ns-pod"] = podState{
 		namespace: "other",
@@ -117,6 +270,7 @@ spec:
 		service:   "svc-other-ns-pod",
 		nodeID:    "worker-a",
 		status:    StatusRunning,
+		createdAt: time.Now().UTC().Add(-3 * time.Minute),
 	}
 	k8s.mu.Unlock()
 
@@ -264,6 +418,10 @@ func (f *failingKubernetesClient) GetPodStatus(_ context.Context, _, _ string) (
 
 func (f *failingKubernetesClient) ListPods(_ context.Context, _ string) ([]string, error) {
 	return nil, nil
+}
+
+func (f *failingKubernetesClient) ListPodsWithCreation(_ context.Context, _ string) (map[string]time.Time, error) {
+	return map[string]time.Time{}, nil
 }
 
 func (f *failingKubernetesClient) ListServices(_ context.Context, _ string) ([]string, error) {
