@@ -46,6 +46,32 @@ type CreateInput struct {
 	TargetPorts []PortSpec
 }
 
+type JobStatus string
+
+const (
+	JobStatusQueued    JobStatus = "queued"
+	JobStatusRunning   JobStatus = "running"
+	JobStatusCompleted JobStatus = "completed"
+	JobStatusFailed    JobStatus = "failed"
+)
+
+type JobError struct {
+	StackID string `json:"stack_id"`
+	Error   string `json:"error"`
+}
+
+type BatchDeleteJob struct {
+	JobID     string     `json:"job_id"`
+	Status    JobStatus  `json:"status"`
+	Total     int        `json:"total"`
+	Deleted   int        `json:"deleted"`
+	NotFound  int        `json:"not_found"`
+	Failed    int        `json:"failed"`
+	Errors    []JobError `json:"errors,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
 type Stats struct {
 	TotalStacks         int            `json:"total_stacks"`
 	ActiveStacks        int            `json:"active_stacks"`

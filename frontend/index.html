@@ -127,7 +127,23 @@
                 </div>
 
                 <div class="grid">
+                    <div class="row cols-2">
+                        <label>
+                            batch stack_ids (JSON array)
+                            <textarea id="batchDeleteIds" rows="3">["stack-1","stack-2"]</textarea>
+                        </label>
+                        <label>
+                            batch job_id
+                            <input id="batchJobId" type="text" placeholder="job-..." />
+                        </label>
+                    </div>
                     <div class="actions">
+                        <button id="btnBatchDelete" class="action danger" type="button" data-action="batchDelete">
+                            POST /stacks/batch-delete
+                        </button>
+                        <button id="btnBatchStatus" class="action" type="button" data-action="batchStatus">
+                            GET /stacks/batch-delete/{job_id}
+                        </button>
                         <button id="btnRefreshStacks" class="action primary" type="button" data-action="refreshStacks">
                             Refresh
                         </button>

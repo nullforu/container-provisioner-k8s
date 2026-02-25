@@ -153,6 +153,67 @@ func (r *DynamoRepository) Delete(ctx context.Context, stackID string) (Stack, b
 	return st, true, nil
 }
 
+func (r *DynamoRepository) CreateBatchDeleteJob(ctx context.Context, job BatchDeleteJob) error {
+	item := jobToItem(job)
+	item[ddbPK] = avS(jobPK(job.JobID))
+	item[ddbSK] = avS("META")
+	item["item_type"] = avS("batch_delete_job")
+
+	_, err := r.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:           &r.table,
+		Item:                item,
+		ConditionExpression: strPtr("attribute_not_exists(pk) AND attribute_not_exists(sk)"),
+	})
+
+	return err
+}
+
+func (r *DynamoRepository) UpdateBatchDeleteJob(ctx context.Context, job BatchDeleteJob) error {
+	item := jobToItem(job)
+	item[ddbPK] = avS(jobPK(job.JobID))
+	item[ddbSK] = avS("META")
+	item["item_type"] = avS("batch_delete_job")
+
+	_, err := r.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:           &r.table,
+		Item:                item,
+		ConditionExpression: strPtr("attribute_exists(pk) AND attribute_exists(sk)"),
+	})
+	if err != nil {
+		var condErr *ddtypes.ConditionalCheckFailedException
+		if errors.As(err, &condErr) {
+			return ErrNotFound
+		}
+	}
+
+	return err
+}
+
+func (r *DynamoRepository) GetBatchDeleteJob(ctx context.Context, jobID string) (BatchDeleteJob, bool, error) {
+	resp, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName:      &r.table,
+		ConsistentRead: boolPtr(r.consistentRead),
+		Key: map[string]ddtypes.AttributeValue{
+			ddbPK: avS(jobPK(jobID)),
+			ddbSK: avS("META"),
+		},
+	})
+	if err != nil {
+		return BatchDeleteJob{}, false, err
+	}
+
+	if len(resp.Item) == 0 {
+		return BatchDeleteJob{}, false, nil
+	}
+
+	job, err := jobFromItem(resp.Item)
+	if err != nil {
+		return BatchDeleteJob{}, false, err
+	}
+
+	return job, true, nil
+}
+
 func (r *DynamoRepository) ListAll(ctx context.Context) ([]Stack, error) {
 	out := make([]Stack, 0)
 	var startKey map[string]ddtypes.AttributeValue
@@ -611,6 +672,7 @@ func copyItem(src map[string]ddtypes.AttributeValue) map[string]ddtypes.Attribut
 func stackMetaPK(stackID string) string { return "STACK#" + stackID }
 func stackSK(stackID string) string     { return "STACK#" + stackID }
 func portSK(port int) string            { return "PORT#" + strconv.Itoa(port) }
+func jobPK(jobID string) string         { return "JOB#" + jobID }
 
 func avS(v string) ddtypes.AttributeValue { return &ddtypes.AttributeValueMemberS{Value: v} }
 func avN(v string) ddtypes.AttributeValue { return &ddtypes.AttributeValueMemberN{Value: v} }
@@ -619,4 +681,89 @@ func (r *DynamoRepository) randomInt(limit int) int {
 	defer r.randMu.Unlock()
 
 	return r.rand.Intn(limit)
+}
+
+func jobToItem(job BatchDeleteJob) map[string]ddtypes.AttributeValue {
+	item := map[string]ddtypes.AttributeValue{
+		"job_id":     avS(job.JobID),
+		"status":     avS(string(job.Status)),
+		"total":      avN(strconv.Itoa(job.Total)),
+		"deleted":    avN(strconv.Itoa(job.Deleted)),
+		"not_found":  avN(strconv.Itoa(job.NotFound)),
+		"failed":     avN(strconv.Itoa(job.Failed)),
+		"created_at": avS(job.CreatedAt.UTC().Format(time.RFC3339Nano)),
+		"updated_at": avS(job.UpdatedAt.UTC().Format(time.RFC3339Nano)),
+	}
+
+	if len(job.Errors) > 0 {
+		item["errors"] = jobErrorsToAttr(job.Errors)
+	}
+
+	return item
+}
+
+func jobFromItem(item map[string]ddtypes.AttributeValue) (BatchDeleteJob, error) {
+	jobID, err := attrString(item, "job_id")
+	if err != nil {
+		return BatchDeleteJob{}, err
+	}
+	statusStr, _ := attrString(item, "status")
+	total, _ := attrInt(item, "total")
+	deleted, _ := attrInt(item, "deleted")
+	notFound, _ := attrInt(item, "not_found")
+	failed, _ := attrInt(item, "failed")
+	createdAt, err := attrTime(item, "created_at")
+	if err != nil {
+		return BatchDeleteJob{}, err
+	}
+	updatedAt, err := attrTime(item, "updated_at")
+	if err != nil {
+		return BatchDeleteJob{}, err
+	}
+	errorsList, _ := attrJobErrors(item, "errors")
+
+	return BatchDeleteJob{
+		JobID:     jobID,
+		Status:    JobStatus(statusStr),
+		Total:     total,
+		Deleted:   deleted,
+		NotFound:  notFound,
+		Failed:    failed,
+		Errors:    errorsList,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}, nil
+}
+
+func jobErrorsToAttr(errorsList []JobError) ddtypes.AttributeValue {
+	list := make([]ddtypes.AttributeValue, 0, len(errorsList))
+	for _, e := range errorsList {
+		list = append(list, &ddtypes.AttributeValueMemberM{Value: map[string]ddtypes.AttributeValue{
+			"stack_id": avS(e.StackID),
+			"error":    avS(e.Error),
+		}})
+	}
+	return &ddtypes.AttributeValueMemberL{Value: list}
+}
+
+func attrJobErrors(item map[string]ddtypes.AttributeValue, key string) ([]JobError, error) {
+	v, ok := item[key]
+	if !ok {
+		return nil, nil
+	}
+	list, ok := v.(*ddtypes.AttributeValueMemberL)
+	if !ok {
+		return nil, fmt.Errorf("attribute %s is not list", key)
+	}
+	out := make([]JobError, 0, len(list.Value))
+	for _, entry := range list.Value {
+		m, ok := entry.(*ddtypes.AttributeValueMemberM)
+		if !ok {
+			return nil, fmt.Errorf("attribute %s entry is not map", key)
+		}
+		stackID, _ := attrString(m.Value, "stack_id")
+		errMsg, _ := attrString(m.Value, "error")
+		out = append(out, JobError{StackID: stackID, Error: errMsg})
+	}
+	return out, nil
 }

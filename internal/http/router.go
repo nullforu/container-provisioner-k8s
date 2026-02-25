@@ -83,6 +83,8 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 	api.GET("/stacks/:stack_id", h.GetStack)
 	api.GET("/stacks/:stack_id/status", h.GetStackStatusSummary)
 	api.DELETE("/stacks/:stack_id", h.DeleteStack)
+	api.POST("/stacks/batch-delete", h.CreateBatchDeleteJob)
+	api.GET("/stacks/batch-delete/:job_id", h.GetBatchDeleteJob)
 	api.GET("/stats", h.GetStats)
 
 	attachFrontendRoutes(r)

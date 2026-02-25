@@ -206,8 +206,11 @@ func (c *KubernetesClient) CreatePodAndService(ctx context.Context, req Provisio
 		return ProvisionResult{}, err
 	}
 
-	createdPod, err = c.client.CoreV1().Pods(req.Namespace).Get(ctx, podName, metav1.GetOptions{})
+	createdPod, err = c.getPodWithRetry(ctx, req.Namespace, podName, 3, 200*time.Millisecond)
 	if err != nil {
+		_ = c.client.CoreV1().Services(req.Namespace).Delete(context.Background(), serviceName, metav1.DeleteOptions{})
+		_ = c.client.CoreV1().Pods(req.Namespace).Delete(context.Background(), podName, metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(0)})
+
 		return ProvisionResult{}, fmt.Errorf("get pod after scheduling: %w", err)
 	}
 
@@ -233,6 +236,38 @@ func (c *KubernetesClient) DeletePodAndService(ctx context.Context, namespace, p
 	}
 
 	return nil
+}
+
+func (c *KubernetesClient) getPodWithRetry(ctx context.Context, namespace, podName string, attempts int, delay time.Duration) (*corev1.Pod, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+
+	var lastErr error
+
+	for i := 0; i < attempts; i++ {
+		pod, err := c.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err == nil {
+			return pod, nil
+		}
+
+		lastErr = err
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		if i == attempts-1 {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	return nil, lastErr
 }
 
 func (c *KubernetesClient) GetPodStatus(ctx context.Context, namespace, podID string) (Status, string, error) {

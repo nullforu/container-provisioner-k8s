@@ -52,6 +52,26 @@ function readTargetPort(id) {
     }
 }
 
+function readJSONList(id) {
+    const el = byId(id)
+    const raw = el ? el.value.trim() : ''
+    if (!raw) return []
+    try {
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) throw new Error('value must be a JSON array')
+        return parsed
+    } catch (err) {
+        throw new Error(`invalid json array: ${err.message}`)
+    }
+}
+
+function getJobId() {
+    const el = byId('batchJobId')
+    const jobID = el ? el.value.trim() : ''
+    if (!jobID) throw new Error('job_id is required')
+    return jobID
+}
+
 function syncStackID(stackID) {
     if (!stackID) return
     const last = byId('lastStackId')
@@ -318,6 +338,21 @@ function wireActions() {
                 renderStacks(result?.body?.stacks || [])
                 return result
             })
+        } else if (action === 'batchDelete') {
+            execute('POST /stacks/batch-delete', async () => {
+                const payload = {
+                    stack_ids: readJSONList('batchDeleteIds'),
+                }
+                const result = await request('POST', '/stacks/batch-delete', payload)
+                const jobID = result?.body?.job_id ?? ''
+                if (jobID) {
+                    const jobInput = byId('batchJobId')
+                    if (jobInput) jobInput.value = jobID
+                }
+                return result
+            })
+        } else if (action === 'batchStatus') {
+            execute('GET /stacks/batch-delete/{job_id}', () => request('GET', `/stacks/batch-delete/${getJobId()}`))
         } else if (action === 'deleteStackItem') {
             const stackID = btn.getAttribute('data-stack-id') || ''
             if (!stackID) return

@@ -18,12 +18,16 @@ type RepositoryClientAPI interface {
 	ReleaseNodePort(ctx context.Context, port int) error
 	UsedNodePortCount(ctx context.Context) (int, error)
 	UpdateStatus(ctx context.Context, stackID string, status Status, nodeID string) error
+	CreateBatchDeleteJob(ctx context.Context, job BatchDeleteJob) error
+	UpdateBatchDeleteJob(ctx context.Context, job BatchDeleteJob) error
+	GetBatchDeleteJob(ctx context.Context, jobID string) (BatchDeleteJob, bool, error)
 }
 
 type InMemoryRepository struct {
 	mu     sync.RWMutex
 	stacks map[string]Stack
 	ports  map[int]string
+	jobs   map[string]BatchDeleteJob
 	rand   *rand.Rand
 }
 
@@ -35,6 +39,7 @@ func NewInMemoryRepository(seed int64) *InMemoryRepository {
 	return &InMemoryRepository{
 		stacks: make(map[string]Stack),
 		ports:  make(map[int]string),
+		jobs:   make(map[string]BatchDeleteJob),
 		rand:   rand.New(rand.NewSource(seed)),
 	}
 }
@@ -115,10 +120,6 @@ func (r *InMemoryRepository) ReserveNodePort(_ context.Context, min, max int) (i
 		return 0, ErrNoAvailableNodePort
 	}
 
-	if len(r.ports) >= total {
-		return 0, ErrNoAvailableNodePort
-	}
-
 	start := min + r.rand.Intn(total)
 	for i := range total {
 		port := min + ((start - min + i) % total)
@@ -167,4 +168,36 @@ func (r *InMemoryRepository) UpdateStatus(_ context.Context, stackID string, sta
 	r.stacks[stackID] = st
 
 	return nil
+}
+
+func (r *InMemoryRepository) CreateBatchDeleteJob(_ context.Context, job BatchDeleteJob) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.jobs[job.JobID]; exists {
+		return fmt.Errorf("job id already exists")
+	}
+
+	r.jobs[job.JobID] = job
+	return nil
+}
+
+func (r *InMemoryRepository) UpdateBatchDeleteJob(_ context.Context, job BatchDeleteJob) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.jobs[job.JobID]; !exists {
+		return ErrNotFound
+	}
+
+	r.jobs[job.JobID] = job
+	return nil
+}
+
+func (r *InMemoryRepository) GetBatchDeleteJob(_ context.Context, jobID string) (BatchDeleteJob, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	job, ok := r.jobs[jobID]
+	return job, ok, nil
 }
