@@ -13,26 +13,37 @@ const (
 )
 
 type Stack struct {
-	StackID        string    `json:"stack_id"`
-	PodID          string    `json:"pod_id"`
-	Namespace      string    `json:"namespace"`
-	NodeID         string    `json:"node_id"`
-	NodePublicIP   *string   `json:"node_public_ip"`
-	PodSpecYAML    string    `json:"pod_spec"`
-	TargetPort     int       `json:"target_port"`
-	NodePort       int       `json:"node_port"`
-	ServiceName    string    `json:"service_name"`
-	Status         Status    `json:"status"`
-	TTLExpiresAt   time.Time `json:"ttl_expires_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	RequestedMilli int64     `json:"requested_cpu_milli"`
-	RequestedBytes int64     `json:"requested_memory_bytes"`
+	StackID        string        `json:"stack_id"`
+	PodID          string        `json:"pod_id"`
+	Namespace      string        `json:"namespace"`
+	NodeID         string        `json:"node_id"`
+	NodePublicIP   *string       `json:"node_public_ip"`
+	PodSpecYAML    string        `json:"pod_spec"`
+	TargetPorts    []PortSpec    `json:"-"`
+	Ports          []PortMapping `json:"ports"`
+	ServiceName    string        `json:"service_name"`
+	Status         Status        `json:"status"`
+	TTLExpiresAt   time.Time     `json:"ttl_expires_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	RequestedMilli int64         `json:"requested_cpu_milli"`
+	RequestedBytes int64         `json:"requested_memory_bytes"`
+}
+
+type PortSpec struct {
+	ContainerPort int    `json:"container_port"`
+	Protocol      string `json:"protocol"`
+}
+
+type PortMapping struct {
+	ContainerPort int    `json:"container_port"`
+	Protocol      string `json:"protocol"`
+	NodePort      int    `json:"node_port"`
 }
 
 type CreateInput struct {
-	PodSpecYML string
-	TargetPort int
+	PodSpecYML  string
+	TargetPorts []PortSpec
 }
 
 type Stats struct {
@@ -45,10 +56,10 @@ type Stats struct {
 }
 
 type StackStatusSummary struct {
-	StackID      string    `json:"stack_id"`
-	Status       Status    `json:"status"`
-	TTL          time.Time `json:"ttl"`
-	NodePort     int       `json:"node_port"`
-	TargetPort   int       `json:"target_port"`
-	NodePublicIP *string   `json:"node_public_ip"`
+	StackID      string        `json:"stack_id"`
+	Status       Status        `json:"status"`
+	TTL          time.Time     `json:"ttl"`
+	TargetPorts  []PortSpec    `json:"-"`
+	Ports        []PortMapping `json:"ports"`
+	NodePublicIP *string       `json:"node_public_ip"`
 }

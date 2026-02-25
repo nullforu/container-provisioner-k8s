@@ -47,12 +47,20 @@ func (r *InMemoryRepository) Create(_ context.Context, st Stack) error {
 		return fmt.Errorf("stack id already exists")
 	}
 
-	if owner, exists := r.ports[st.NodePort]; !exists || owner != "" {
+	if len(st.Ports) == 0 {
 		return ErrNoAvailableNodePort
 	}
 
+	for _, p := range st.Ports {
+		if owner, exists := r.ports[p.NodePort]; !exists || owner != "" {
+			return ErrNoAvailableNodePort
+		}
+	}
+
 	r.stacks[st.StackID] = st
-	r.ports[st.NodePort] = st.StackID
+	for _, p := range st.Ports {
+		r.ports[p.NodePort] = st.StackID
+	}
 
 	return nil
 }
@@ -75,7 +83,9 @@ func (r *InMemoryRepository) Delete(_ context.Context, stackID string) (Stack, b
 	}
 
 	delete(r.stacks, stackID)
-	delete(r.ports, st.NodePort)
+	for _, p := range st.Ports {
+		delete(r.ports, p.NodePort)
+	}
 
 	return st, true, nil
 }

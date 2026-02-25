@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"smctf/internal/config"
@@ -34,6 +35,7 @@ type KubernetesClientAPI interface {
 	DeletePodAndService(ctx context.Context, namespace, podID, serviceName string) error
 	GetPodStatus(ctx context.Context, namespace, podID string) (Status, string, error)
 	ListPods(ctx context.Context, namespace string) ([]string, error)
+	ListPodsWithCreation(ctx context.Context, namespace string) (map[string]PodInfo, error)
 	ListServices(ctx context.Context, namespace string) ([]string, error)
 	NodeExists(ctx context.Context, nodeID string) (bool, error)
 	HasIngressNetworkPolicy(ctx context.Context) (bool, error)
@@ -44,9 +46,9 @@ type KubernetesClientAPI interface {
 type ProvisionRequest struct {
 	Namespace  string
 	StackID    string
+	PodName    string
 	PodSpecYML string
-	TargetPort int
-	NodePort   int
+	Ports      []PortMapping
 }
 
 type ProvisionResult struct {
@@ -54,6 +56,11 @@ type ProvisionResult struct {
 	ServiceName string
 	NodeID      string
 	Status      Status
+}
+
+type PodInfo struct {
+	CreatedAt time.Time
+	StackID   string
 }
 
 func NewKubernetesClient(cfg config.StackConfig) (*KubernetesClient, error) {
@@ -117,7 +124,11 @@ func (c *KubernetesClient) CreatePodAndService(ctx context.Context, req Provisio
 		return ProvisionResult{}, fmt.Errorf("decode pod spec: %w", err)
 	}
 
-	podName := req.StackID
+	podName := req.PodName
+	if podName == "" {
+		podName = req.StackID
+	}
+
 	serviceName := "svc-" + req.StackID
 	labels := make(map[string]string)
 	if len(pod.Labels) > 0 {
@@ -146,15 +157,21 @@ func (c *KubernetesClient) CreatePodAndService(ctx context.Context, req Provisio
 		return ProvisionResult{}, fmt.Errorf("create pod: %w", err)
 	}
 
-	protocol := corev1.ProtocolTCP
-	for _, cn := range createdPod.Spec.Containers {
-		for _, p := range cn.Ports {
-			if int(p.ContainerPort) == req.TargetPort {
-				if p.Protocol != "" {
-					protocol = p.Protocol
-				}
-			}
+	servicePorts := make([]corev1.ServicePort, 0, len(req.Ports))
+	for _, p := range req.Ports {
+		proto := corev1.ProtocolTCP
+		if strings.EqualFold(p.Protocol, string(corev1.ProtocolUDP)) {
+			proto = corev1.ProtocolUDP
 		}
+
+		name := fmt.Sprintf("p-%d-%s", p.ContainerPort, strings.ToLower(string(proto)))
+		servicePorts = append(servicePorts, corev1.ServicePort{
+			Name:       name,
+			Protocol:   proto,
+			Port:       int32(p.ContainerPort),
+			TargetPort: intstr.FromInt(p.ContainerPort),
+			NodePort:   int32(p.NodePort),
+		})
 	}
 
 	svc := &corev1.Service{
@@ -166,15 +183,7 @@ func (c *KubernetesClient) CreatePodAndService(ctx context.Context, req Provisio
 		Spec: corev1.ServiceSpec{
 			Type:     corev1.ServiceTypeNodePort,
 			Selector: map[string]string{"smctf.io/stack-id": req.StackID},
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "challenge",
-					Protocol:   protocol,
-					Port:       int32(req.TargetPort),
-					TargetPort: intstr.FromInt(req.TargetPort),
-					NodePort:   int32(req.NodePort),
-				},
-			},
+			Ports:    servicePorts,
 		},
 	}
 
@@ -257,6 +266,28 @@ func (c *KubernetesClient) ListPods(ctx context.Context, namespace string) ([]st
 
 		out = append(out, item.Name)
 	}
+
+	return out, nil
+}
+
+func (c *KubernetesClient) ListPodsWithCreation(ctx context.Context, namespace string) (map[string]PodInfo, error) {
+	podList, err := c.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods: %w", err)
+	}
+
+	out := make(map[string]PodInfo, len(podList.Items))
+	for _, item := range podList.Items {
+		if item.Name == "" {
+			continue
+		}
+
+		out[item.Name] = PodInfo{
+			CreatedAt: item.CreationTimestamp.Time,
+			StackID:   item.Labels["smctf.io/stack-id"],
+		}
+	}
+
 	return out, nil
 }
 

@@ -59,19 +59,27 @@ func (r *DynamoRepository) Create(ctx context.Context, st Stack) error {
 	byID[ddbSK] = avS("META")
 	byID["item_type"] = avS("stack_by_id")
 
-	keyPort := map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(st.NodePort))}
+	if len(st.Ports) == 0 {
+		return ErrNoAvailableNodePort
+	}
+
+	items := []ddtypes.TransactWriteItem{
+		{Put: &ddtypes.Put{TableName: &r.table, Item: byID, ConditionExpression: strPtr("attribute_not_exists(pk) AND attribute_not_exists(sk)")}},
+	}
+
+	for _, p := range st.Ports {
+		keyPort := map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(p.NodePort))}
+		items = append(items, ddtypes.TransactWriteItem{Update: &ddtypes.Update{
+			TableName:                 &r.table,
+			Key:                       keyPort,
+			UpdateExpression:          strPtr("SET stack_id = :sid, updated_at = :now"),
+			ConditionExpression:       strPtr("attribute_exists(pk) AND attribute_exists(sk) AND (attribute_not_exists(stack_id) OR stack_id = :empty)"),
+			ExpressionAttributeValues: map[string]ddtypes.AttributeValue{":sid": avS(st.StackID), ":now": avS(now), ":empty": avS("")},
+		}})
+	}
 
 	_, err := r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
-		TransactItems: []ddtypes.TransactWriteItem{
-			{Put: &ddtypes.Put{TableName: &r.table, Item: byID, ConditionExpression: strPtr("attribute_not_exists(pk) AND attribute_not_exists(sk)")}},
-			{Update: &ddtypes.Update{
-				TableName:                 &r.table,
-				Key:                       keyPort,
-				UpdateExpression:          strPtr("SET stack_id = :sid, updated_at = :now"),
-				ConditionExpression:       strPtr("attribute_exists(pk) AND attribute_exists(sk) AND (attribute_not_exists(stack_id) OR stack_id = :empty)"),
-				ExpressionAttributeValues: map[string]ddtypes.AttributeValue{":sid": avS(st.StackID), ":now": avS(now), ":empty": avS("")},
-			}},
-		},
+		TransactItems: items,
 	})
 
 	if err != nil {
@@ -117,15 +125,22 @@ func (r *DynamoRepository) Delete(ctx context.Context, stackID string) (Stack, b
 		return Stack{}, false, nil
 	}
 
+	items := []ddtypes.TransactWriteItem{
+		{Delete: &ddtypes.Delete{
+			TableName:           &r.table,
+			Key:                 map[string]ddtypes.AttributeValue{ddbPK: avS(stackMetaPK(st.StackID)), ddbSK: avS("META")},
+			ConditionExpression: strPtr("attribute_exists(pk) AND attribute_exists(sk)"),
+		}},
+	}
+	for _, p := range st.Ports {
+		items = append(items, ddtypes.TransactWriteItem{Delete: &ddtypes.Delete{
+			TableName: &r.table,
+			Key:       map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(p.NodePort))},
+		}})
+	}
+
 	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
-		TransactItems: []ddtypes.TransactWriteItem{
-			{Delete: &ddtypes.Delete{
-				TableName:           &r.table,
-				Key:                 map[string]ddtypes.AttributeValue{ddbPK: avS(stackMetaPK(st.StackID)), ddbSK: avS("META")},
-				ConditionExpression: strPtr("attribute_exists(pk) AND attribute_exists(sk)"),
-			}},
-			{Delete: &ddtypes.Delete{TableName: &r.table, Key: map[string]ddtypes.AttributeValue{ddbPK: avS("PORTS"), ddbSK: avS(portSK(st.NodePort))}}},
-		},
+		TransactItems: items,
 	})
 
 	if err != nil {
@@ -325,7 +340,9 @@ func mapDynamoTxError(err error) error {
 			continue
 		}
 		switch idx {
-		case 1:
+		case 0:
+			return err
+		default:
 			return ErrNoAvailableNodePort
 		}
 	}
@@ -357,8 +374,8 @@ func stackToItem(st Stack) map[string]ddtypes.AttributeValue {
 		"namespace":              avS(st.Namespace),
 		"node_id":                avS(st.NodeID),
 		"pod_spec":               avS(st.PodSpecYAML),
-		"target_port":            avN(strconv.Itoa(st.TargetPort)),
-		"node_port":              avN(strconv.Itoa(st.NodePort)),
+		"target_ports":           portSpecsToAttr(st.TargetPorts),
+		"ports":                  portMappingsToAttr(st.Ports),
 		"service_name":           avS(st.ServiceName),
 		"status":                 avS(string(st.Status)),
 		"ttl_expires_at":         avS(st.TTLExpiresAt.UTC().Format(time.RFC3339Nano)),
@@ -386,8 +403,8 @@ func stackFromItem(item map[string]ddtypes.AttributeValue) (Stack, error) {
 	nodeID, _ := attrString(item, "node_id")
 	nodePublicIP := attrStringOptional(item, "node_public_ip")
 	podSpec, _ := attrString(item, "pod_spec")
-	targetPort, _ := attrInt(item, "target_port")
-	nodePort, _ := attrInt(item, "node_port")
+	targetPorts, _ := attrPortSpecs(item, "target_ports")
+	portMappings, _ := attrPortMappings(item, "ports")
 	serviceName, _ := attrString(item, "service_name")
 	statusStr, _ := attrString(item, "status")
 	ttlAt, err := attrTime(item, "ttl_expires_at")
@@ -415,8 +432,8 @@ func stackFromItem(item map[string]ddtypes.AttributeValue) (Stack, error) {
 		NodeID:         nodeID,
 		NodePublicIP:   nodePublicIP,
 		PodSpecYAML:    podSpec,
-		TargetPort:     targetPort,
-		NodePort:       nodePort,
+		TargetPorts:    targetPorts,
+		Ports:          portMappings,
 		ServiceName:    serviceName,
 		Status:         Status(statusStr),
 		TTLExpiresAt:   ttlAt,
@@ -490,6 +507,96 @@ func attrTime(item map[string]ddtypes.AttributeValue, key string) (time.Time, er
 	}
 
 	return time.Parse(time.RFC3339Nano, s)
+}
+
+func attrPortSpecs(item map[string]ddtypes.AttributeValue, key string) ([]PortSpec, error) {
+	v, ok := item[key]
+	if !ok {
+		return nil, nil
+	}
+
+	list, ok := v.(*ddtypes.AttributeValueMemberL)
+	if !ok {
+		return nil, fmt.Errorf("attribute %s is not list", key)
+	}
+
+	out := make([]PortSpec, 0, len(list.Value))
+	for _, entry := range list.Value {
+		m, ok := entry.(*ddtypes.AttributeValueMemberM)
+		if !ok {
+			return nil, fmt.Errorf("attribute %s entry is not map", key)
+		}
+
+		port, err := attrInt(m.Value, "container_port")
+		if err != nil {
+			return nil, err
+		}
+
+		proto, _ := attrString(m.Value, "protocol")
+		out = append(out, PortSpec{ContainerPort: port, Protocol: proto})
+	}
+
+	return out, nil
+}
+
+func attrPortMappings(item map[string]ddtypes.AttributeValue, key string) ([]PortMapping, error) {
+	v, ok := item[key]
+	if !ok {
+		return nil, nil
+	}
+
+	list, ok := v.(*ddtypes.AttributeValueMemberL)
+	if !ok {
+		return nil, fmt.Errorf("attribute %s is not list", key)
+	}
+
+	out := make([]PortMapping, 0, len(list.Value))
+	for _, entry := range list.Value {
+		m, ok := entry.(*ddtypes.AttributeValueMemberM)
+		if !ok {
+			return nil, fmt.Errorf("attribute %s entry is not map", key)
+		}
+
+		port, err := attrInt(m.Value, "container_port")
+		if err != nil {
+			return nil, err
+		}
+
+		nodePort, err := attrInt(m.Value, "node_port")
+		if err != nil {
+			return nil, err
+		}
+
+		proto, _ := attrString(m.Value, "protocol")
+		out = append(out, PortMapping{ContainerPort: port, Protocol: proto, NodePort: nodePort})
+	}
+
+	return out, nil
+}
+
+func portSpecsToAttr(ports []PortSpec) ddtypes.AttributeValue {
+	list := make([]ddtypes.AttributeValue, 0, len(ports))
+	for _, p := range ports {
+		list = append(list, &ddtypes.AttributeValueMemberM{Value: map[string]ddtypes.AttributeValue{
+			"container_port": avN(strconv.Itoa(p.ContainerPort)),
+			"protocol":       avS(p.Protocol),
+		}})
+	}
+
+	return &ddtypes.AttributeValueMemberL{Value: list}
+}
+
+func portMappingsToAttr(ports []PortMapping) ddtypes.AttributeValue {
+	list := make([]ddtypes.AttributeValue, 0, len(ports))
+	for _, p := range ports {
+		list = append(list, &ddtypes.AttributeValueMemberM{Value: map[string]ddtypes.AttributeValue{
+			"container_port": avN(strconv.Itoa(p.ContainerPort)),
+			"protocol":       avS(p.Protocol),
+			"node_port":      avN(strconv.Itoa(p.NodePort)),
+		}})
+	}
+
+	return &ddtypes.AttributeValueMemberL{Value: list}
 }
 
 func copyItem(src map[string]ddtypes.AttributeValue) map[string]ddtypes.AttributeValue {

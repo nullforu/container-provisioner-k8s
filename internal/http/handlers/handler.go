@@ -19,8 +19,8 @@ func New(svc *stack.Service) *Handler {
 }
 
 type createStackRequest struct {
-	PodSpec    string `json:"pod_spec"`
-	TargetPort int    `json:"target_port"`
+	PodSpec    string           `json:"pod_spec"`
+	TargetPort []stack.PortSpec `json:"target_port"`
 }
 
 func (h *Handler) CreateStack(c *gin.Context) {
@@ -32,8 +32,8 @@ func (h *Handler) CreateStack(c *gin.Context) {
 	}
 
 	st, err := h.svc.Create(c.Request.Context(), stack.CreateInput{
-		PodSpecYML: req.PodSpec,
-		TargetPort: req.TargetPort,
+		PodSpecYML:  req.PodSpec,
+		TargetPorts: req.TargetPort,
 	})
 
 	if err != nil {

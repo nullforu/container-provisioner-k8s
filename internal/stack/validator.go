@@ -23,15 +23,43 @@ type ValidationResult struct {
 	SanitizedYAML  string
 	RequestedMilli int64
 	RequestedBytes int64
+	TargetPorts    []PortSpec
 }
 
-func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResult, error) {
+const maxTargetPorts = 24
+
+func (v *Validator) ValidatePodSpec(raw string, targetPorts []PortSpec) (ValidationResult, error) {
 	if strings.TrimSpace(raw) == "" {
 		return ValidationResult{}, fmt.Errorf("%w: pod_spec is required", ErrPodSpecInvalid)
 	}
 
-	if targetPort < 1 || targetPort > 65535 {
-		return ValidationResult{}, fmt.Errorf("%w: target_port is out of range", ErrInvalidInput)
+	if len(targetPorts) == 0 {
+		return ValidationResult{}, fmt.Errorf("%w: target_port is required", ErrInvalidInput)
+	}
+
+	if len(targetPorts) > maxTargetPorts {
+		return ValidationResult{}, fmt.Errorf("%w: target_port exceeds limit (max %d)", ErrInvalidInput, maxTargetPorts)
+	}
+
+	normalizedTargets := make([]PortSpec, 0, len(targetPorts))
+	targetSet := make(map[string]struct{}, len(targetPorts))
+	for _, tp := range targetPorts {
+		if tp.ContainerPort < 1 || tp.ContainerPort > 65535 {
+			return ValidationResult{}, fmt.Errorf("%w: target_port is out of range", ErrInvalidInput)
+		}
+
+		proto, err := normalizeProtocol(tp.Protocol)
+		if err != nil {
+			return ValidationResult{}, err
+		}
+
+		key := portKey(tp.ContainerPort, proto)
+		if _, exists := targetSet[key]; exists {
+			return ValidationResult{}, fmt.Errorf("%w: duplicate target_port entry", ErrInvalidInput)
+		}
+
+		targetSet[key] = struct{}{}
+		normalizedTargets = append(normalizedTargets, PortSpec{ContainerPort: tp.ContainerPort, Protocol: proto})
 	}
 
 	var pod corev1.Pod
@@ -76,7 +104,7 @@ func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResul
 	var initMaxMilli int64
 	var initMaxBytes int64
 	portCount := 0
-	targetPortFound := false
+	podPortSet := make(map[string]struct{})
 
 	for i := range pod.Spec.InitContainers {
 		c := &pod.Spec.InitContainers[i]
@@ -88,7 +116,7 @@ func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResul
 			return ValidationResult{}, fmt.Errorf("%w: initContainer ports are forbidden", ErrPodSpecInvalid)
 		}
 
-		cpuMilli, memBytes, err := normalizeAndValidateResources(c.Resources, v.cfg)
+		cpuMilli, memBytes, err := normalizeAndValidateResources(c.Resources)
 		if err != nil {
 			return ValidationResult{}, err
 		}
@@ -109,7 +137,7 @@ func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResul
 			return ValidationResult{}, err
 		}
 
-		cpuMilli, memBytes, err := normalizeAndValidateResources(c.Resources, v.cfg)
+		cpuMilli, memBytes, err := normalizeAndValidateResources(c.Resources)
 		if err != nil {
 			return ValidationResult{}, err
 		}
@@ -132,18 +160,25 @@ func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResul
 			}
 
 			portCount++
-			if int(p.ContainerPort) == targetPort {
-				targetPortFound = true
+			proto := string(p.Protocol)
+			if proto == "" {
+				proto = string(corev1.ProtocolTCP)
 			}
+
+			key := portKey(int(p.ContainerPort), proto)
+			podPortSet[key] = struct{}{}
 		}
 	}
 
-	if !targetPortFound {
-		return ValidationResult{}, fmt.Errorf("%w: target_port must exist in container ports", ErrPodSpecInvalid)
+	if portCount == 0 {
+		return ValidationResult{}, fmt.Errorf("%w: at least one exposed container port is required", ErrPodSpecInvalid)
 	}
 
-	if portCount != 1 {
-		return ValidationResult{}, fmt.Errorf("%w: exactly one exposed container port is required", ErrPodSpecInvalid)
+	for _, tp := range normalizedTargets {
+		key := portKey(tp.ContainerPort, tp.Protocol)
+		if _, ok := podPortSet[key]; !ok {
+			return ValidationResult{}, fmt.Errorf("%w: target_port must exist in container ports", ErrPodSpecInvalid)
+		}
 	}
 
 	reqMilli := max64(sumMilli, initMaxMilli)
@@ -178,7 +213,26 @@ func (v *Validator) ValidatePodSpec(raw string, targetPort int) (ValidationResul
 		SanitizedYAML:  string(sanitized),
 		RequestedMilli: reqMilli,
 		RequestedBytes: reqBytes,
+		TargetPorts:    normalizedTargets,
 	}, nil
+}
+
+func normalizeProtocol(proto string) (string, error) {
+	upper := strings.ToUpper(strings.TrimSpace(proto))
+	if upper == "" {
+		return "", fmt.Errorf("%w: protocol is required", ErrInvalidInput)
+	}
+
+	if upper != "TCP" && upper != "UDP" {
+		return "", fmt.Errorf("%w: protocol must be TCP or UDP", ErrInvalidInput)
+
+	}
+
+	return upper, nil
+}
+
+func portKey(port int, proto string) string {
+	return fmt.Sprintf("%d/%s", port, strings.ToUpper(proto))
 }
 
 func validateContainerBasics(c *corev1.Container) error {
@@ -223,7 +277,7 @@ func hardenedContainerSecurityContext() *corev1.SecurityContext {
 	}
 }
 
-func normalizeAndValidateResources(r corev1.ResourceRequirements, cfg config.StackConfig) (int64, int64, error) {
+func normalizeAndValidateResources(r corev1.ResourceRequirements) (int64, int64, error) {
 	cpuReq := getMilli(r.Requests, corev1.ResourceCPU)
 	cpuLim := getMilli(r.Limits, corev1.ResourceCPU)
 	memReq := getBytes(r.Requests, corev1.ResourceMemory)

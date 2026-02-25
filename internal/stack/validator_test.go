@@ -28,7 +28,7 @@ spec:
         limits:
           cpu: "100m"
           memory: "64Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
@@ -54,7 +54,7 @@ spec:
         limits:
           cpu: "200m"
           memory: "128Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,7 +102,7 @@ spec:
         limits:
           cpu: "100m"
           memory: "64Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err == nil {
 		t.Fatalf("expected security context validation error")
 	}
@@ -135,7 +135,7 @@ spec:
         limits:
           cpu: "100m"
           memory: "64Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err == nil {
 		t.Fatalf("expected hostPath validation error")
 	}
@@ -171,7 +171,7 @@ spec:
         limits:
           cpu: "100m"
           memory: "64Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err == nil {
 		t.Fatalf("expected serviceAccountToken projection validation error")
 	}
@@ -198,7 +198,7 @@ spec:
         limits:
           cpu: "100m"
           memory: "64Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err == nil {
 		t.Fatalf("expected hostPort validation error")
 	}
@@ -235,12 +235,144 @@ spec:
         limits:
           cpu: "100m"
           memory: "64Mi"
-`, 8080)
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if res.RequestedMilli != 1500 {
 		t.Fatalf("expected 1500m (init max), got %d", res.RequestedMilli)
+	}
+}
+
+func TestValidatorRejectsDuplicateTargetPorts(t *testing.T) {
+	v := NewValidator(config.StackConfig{})
+	_, err := v.ValidatePodSpec(`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dup-targets
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 8080
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}, {ContainerPort: 8080, Protocol: "tcp"}})
+	if err == nil {
+		t.Fatalf("expected duplicate target_port error")
+	}
+}
+
+func TestValidatorAllowsSubsetOfPodPorts(t *testing.T) {
+	v := NewValidator(config.StackConfig{})
+	_, err := v.ValidatePodSpec(`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: subset-ports
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 8080
+        - containerPort: 9090
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
+`, []PortSpec{{ContainerPort: 8080, Protocol: "TCP"}})
+	if err != nil {
+		t.Fatalf("unexpected error for subset targets: %v", err)
+	}
+}
+
+func TestValidatorRejectsMissingProtocol(t *testing.T) {
+	v := NewValidator(config.StackConfig{})
+	_, err := v.ValidatePodSpec(`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: missing-proto
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 8080
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
+`, []PortSpec{{ContainerPort: 8080}})
+	if err == nil {
+		t.Fatalf("expected missing protocol error")
+	}
+}
+
+func TestValidatorRejectsInvalidProtocol(t *testing.T) {
+	v := NewValidator(config.StackConfig{})
+	_, err := v.ValidatePodSpec(`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: invalid-proto
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 8080
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
+`, []PortSpec{{ContainerPort: 8080, Protocol: "SCTP"}})
+	if err == nil {
+		t.Fatalf("expected invalid protocol error")
+	}
+}
+
+func TestValidatorAcceptsUDPProtocol(t *testing.T) {
+	v := NewValidator(config.StackConfig{})
+	_, err := v.ValidatePodSpec(`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: udp-proto
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 8080
+          protocol: UDP
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
+`, []PortSpec{{ContainerPort: 8080, Protocol: "UDP"}})
+	if err != nil {
+		t.Fatalf("unexpected udp protocol error: %v", err)
 	}
 }

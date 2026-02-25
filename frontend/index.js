@@ -38,6 +38,20 @@ function readInt(id) {
     return Number.parseInt(el ? el.value : '0', 10)
 }
 
+function readTargetPort(id) {
+    const el = byId(id)
+    const raw = el ? el.value.trim() : ''
+    if (!raw) return null
+    if (!raw.startsWith('[')) {
+        throw new Error('target_port must be a JSON array')
+    }
+    try {
+        return JSON.parse(raw)
+    } catch (err) {
+        throw new Error(`invalid target_port json: ${err.message}`)
+    }
+}
+
 function syncStackID(stackID) {
     if (!stackID) return
     const last = byId('lastStackId')
@@ -132,8 +146,7 @@ function renderStacks(stacks) {
             ['service_name', st.service_name],
             ['node_id', st.node_id],
             ['node_public_ip', st.node_public_ip || '-'],
-            ['target_port', st.target_port],
-            ['node_port', st.node_port],
+            ['ports', JSON.stringify(st.ports || null)],
             ['ttl_expires_at', formatISO(st.ttl_expires_at)],
             ['created_at', formatISO(st.created_at)],
             ['updated_at', formatISO(st.updated_at)],
@@ -285,7 +298,7 @@ function wireActions() {
         else if (action === 'create') {
             execute('POST /stacks', async () => {
                 const payload = {
-                    target_port: readInt('createTargetPort'),
+                    target_port: readTargetPort('createTargetPort'),
                     pod_spec: byId('createPodSpec')?.value ?? '',
                 }
                 const result = await request('POST', '/stacks', payload)

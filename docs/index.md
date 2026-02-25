@@ -58,7 +58,12 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
 
 ```json
 {
-    "target_port": 80,
+    "target_port": [
+        {
+            "container_port": 80,
+            "protocol": "TCP"
+        }
+    ],
     "pod_spec": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: challenge\nspec:\n  containers:\n    - name: app\n      image: nginx:stable\n      ports:\n        - containerPort: 80\n          protocol: TCP\n      resources:\n        requests:\n          cpu: \"100m\"\n          memory: \"128Mi\"\n        limits:\n          cpu: \"100m\"\n          memory: \"128Mi\""
 }
 ```
@@ -81,8 +86,13 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
     "node_id": "dev-worker2",
     "node_public_ip": "12.34.56.78",
     "pod_spec": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: challenge\nspec:\n  automountServiceAccountToken: false\n  containers:\n  - image: nginx:stable\n    name: app\n    ports:\n    - containerPort: 80\n      protocol: TCP\n    resources:\n      limits:\n        cpu: 100m\n        memory: 128Mi\n      requests:\n        cpu: 100m\n        memory: 128Mi\n    securityContext:\n      allowPrivilegeEscalation: false\n      privileged: false\n      seccompProfile:\n        type: RuntimeDefault\n  enableServiceLinks: false\n  restartPolicy: Never\n  securityContext:\n    seccompProfile:\n      type: RuntimeDefault\nstatus: {}\n",
-    "target_port": 80,
-    "node_port": 31538,
+    "ports": [
+        {
+            "container_port": 80,
+            "protocol": "TCP",
+            "node_port": 31538
+        }
+    ],
     "service_name": "svc-stack-716b6384dd477b0b",
     "status": "creating",
     "ttl_expires_at": "2026-02-10T04:02:26.535664Z",
@@ -110,8 +120,13 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
             "node_id": "dev-worker2",
             "node_public_ip": "12.34.56.78",
             "pod_spec": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: challenge\nspec:\n  automountServiceAccountToken: false\n  containers:\n  - image: nginx:stable\n    name: app\n    ports:\n    - containerPort: 80\n      protocol: TCP\n    resources:\n      limits:\n        cpu: 100m\n        memory: 128Mi\n      requests:\n        cpu: 100m\n        memory: 128Mi\n    securityContext:\n      allowPrivilegeEscalation: false\n      privileged: false\n      seccompProfile:\n        type: RuntimeDefault\n  enableServiceLinks: false\n  restartPolicy: Never\n  securityContext:\n    seccompProfile:\n      type: RuntimeDefault\nstatus: {}\n",
-            "target_port": 80,
-            "node_port": 31538,
+            "ports": [
+                {
+                    "container_port": 80,
+                    "protocol": "TCP",
+                    "node_port": 31538
+                }
+            ],
             "service_name": "svc-stack-716b6384dd477b0b",
             "status": "running",
             "ttl_expires_at": "2026-02-10T04:02:26.535664Z",
@@ -139,8 +154,13 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
     "node_id": "dev-worker2",
     "node_public_ip": "12.34.56.78",
     "pod_spec": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: challenge\nspec:\n  automountServiceAccountToken: false\n  containers:\n  - image: nginx:stable\n    name: app\n    ports:\n    - containerPort: 80\n      protocol: TCP\n    resources:\n      limits:\n        cpu: 100m\n        memory: 128Mi\n      requests:\n        cpu: 100m\n        memory: 128Mi\n    securityContext:\n      allowPrivilegeEscalation: false\n      privileged: false\n      seccompProfile:\n        type: RuntimeDefault\n  enableServiceLinks: false\n  restartPolicy: Never\n  securityContext:\n    seccompProfile:\n      type: RuntimeDefault\nstatus: {}\n",
-    "target_port": 80,
-    "node_port": 31538,
+    "ports": [
+        {
+            "container_port": 80,
+            "protocol": "TCP",
+            "node_port": 31538
+        }
+    ],
     "service_name": "svc-stack-716b6384dd477b0b",
     "status": "running",
     "ttl_expires_at": "2026-02-10T04:02:26.535664Z",
@@ -163,8 +183,13 @@ curl "http://localhost:8081/healthz?api_key=<your-api-key>"
     "stack_id": "stack-716b6384dd477b0b",
     "status": "running",
     "ttl": "2026-02-10T04:02:26.535664Z",
-    "node_port": 31538,
-    "target_port": 80,
+    "ports": [
+        {
+            "container_port": 80,
+            "protocol": "TCP",
+            "node_port": 31538
+        }
+    ],
     "node_public_ip": "12.34.56.78"
 }
 ```

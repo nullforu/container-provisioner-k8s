@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"smctf/internal/config"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type Service struct {
@@ -34,74 +36,95 @@ func NewService(cfg config.StackConfig, repo RepositoryClientAPI, k8s Kubernetes
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (Stack, error) {
-	valid, err := s.validator.ValidatePodSpec(in.PodSpecYML, in.TargetPort)
+	valid, err := s.validator.ValidatePodSpec(in.PodSpecYML, in.TargetPorts)
 	if err != nil {
 		return Stack{}, err
 	}
-
-	nodePort, err := s.repo.ReserveNodePort(ctx, s.cfg.NodePortMin, s.cfg.NodePortMax)
-	if err != nil {
-		return Stack{}, err
-	}
-
-	releasePort := true
-	defer func() {
-		if releasePort {
-			if err := s.repo.ReleaseNodePort(context.Background(), nodePort); err != nil {
-				slog.Error("release reserved nodeport failed", slog.Int("node_port", nodePort), slog.Any("error", err))
-			}
-		}
-	}()
 
 	stackID := newStackID()
 	now := s.now()
-	st := Stack{
-		StackID:        stackID,
-		Namespace:      s.cfg.Namespace,
-		PodSpecYAML:    valid.SanitizedYAML,
-		TargetPort:     in.TargetPort,
-		NodePort:       nodePort,
-		Status:         StatusCreating,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		TTLExpiresAt:   now.Add(s.cfg.StackTTL),
-		RequestedMilli: valid.RequestedMilli,
-		RequestedBytes: valid.RequestedBytes,
-	}
+	var lastErr error
 
-	result, err := s.k8s.CreatePodAndService(ctx, ProvisionRequest{
-		Namespace:  s.cfg.Namespace,
-		StackID:    stackID,
-		PodSpecYML: valid.SanitizedYAML,
-		TargetPort: in.TargetPort,
-		NodePort:   nodePort,
-	})
-	if err != nil {
-		return Stack{}, mapProvisionError(err)
-	}
-
-	st.PodID = result.PodID
-	st.ServiceName = result.ServiceName
-	st.NodeID = result.NodeID
-	st.Status = result.Status
-
-	nodePublicIP, ipErr := s.k8s.GetNodePublicIP(ctx, st.NodeID)
-	if ipErr != nil {
-		slog.Warn("resolve node public ip failed", slog.String("stack_id", st.StackID), slog.String("node_id", st.NodeID), slog.Any("error", ipErr))
-	}
-	st.NodePublicIP = nodePublicIP
-
-	if err := s.repo.Create(ctx, st); err != nil {
-		if k8sErr := s.k8s.DeletePodAndService(context.Background(), st.Namespace, st.PodID, st.ServiceName); k8sErr != nil {
-			slog.Error("rollback delete pod/service failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", k8sErr))
+	for attempt := range 2 {
+		ports, reservedPorts, reserveErr := s.reservePorts(ctx, valid.TargetPorts)
+		if reserveErr != nil {
+			return Stack{}, reserveErr
 		}
 
-		return Stack{}, err
+		releasePorts := true
+		release := func() {
+			if releasePorts {
+				s.releasePorts(reservedPorts)
+			}
+		}
+
+		st := Stack{
+			StackID:        stackID,
+			Namespace:      s.cfg.Namespace,
+			PodSpecYAML:    valid.SanitizedYAML,
+			TargetPorts:    valid.TargetPorts,
+			Ports:          ports,
+			Status:         StatusCreating,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			TTLExpiresAt:   now.Add(s.cfg.StackTTL),
+			RequestedMilli: valid.RequestedMilli,
+			RequestedBytes: valid.RequestedBytes,
+		}
+
+		podName := stackID
+		if attempt > 0 {
+			podName = fmt.Sprintf("%s-retry-%d", stackID, attempt)
+		}
+
+		result, err := s.k8s.CreatePodAndService(ctx, ProvisionRequest{
+			Namespace:  s.cfg.Namespace,
+			StackID:    stackID,
+			PodName:    podName,
+			PodSpecYML: valid.SanitizedYAML,
+			Ports:      ports,
+		})
+		if err != nil {
+			lastErr = err
+			release()
+
+			if attempt == 0 && isNodePortAllocatedError(err) {
+				continue
+			}
+
+			return Stack{}, mapProvisionError(err)
+		}
+
+		st.PodID = result.PodID
+		st.ServiceName = result.ServiceName
+		st.NodeID = result.NodeID
+		st.Status = result.Status
+
+		nodePublicIP, ipErr := s.k8s.GetNodePublicIP(ctx, st.NodeID)
+		if ipErr != nil {
+			slog.Warn("resolve node public ip failed", slog.String("stack_id", st.StackID), slog.String("node_id", st.NodeID), slog.Any("error", ipErr))
+		}
+
+		st.NodePublicIP = nodePublicIP
+
+		if err := s.repo.Create(ctx, st); err != nil {
+			if k8sErr := s.k8s.DeletePodAndService(context.Background(), st.Namespace, st.PodID, st.ServiceName); k8sErr != nil {
+				slog.Error("rollback delete pod/service failed", slog.String("stack_id", st.StackID), slog.String("pod_id", st.PodID), slog.String("service_name", st.ServiceName), slog.Any("error", k8sErr))
+			}
+
+			release()
+			return Stack{}, err
+		}
+
+		releasePorts = false
+		return st, nil
 	}
 
-	releasePort = false
+	if lastErr == nil {
+		lastErr = fmt.Errorf("nodeport allocation failed")
+	}
 
-	return st, nil
+	return Stack{}, mapProvisionError(lastErr)
 }
 
 func (s *Service) GetDetails(ctx context.Context, stackID string) (Stack, error) {
@@ -149,8 +172,8 @@ func (s *Service) GetStatusSummary(ctx context.Context, stackID string) (StackSt
 		StackID:      st.StackID,
 		Status:       st.Status,
 		TTL:          st.TTLExpiresAt,
-		NodePort:     st.NodePort,
-		TargetPort:   st.TargetPort,
+		TargetPorts:  st.TargetPorts,
+		Ports:        st.Ports,
 		NodePublicIP: s.nodePublicIP(ctx, st.NodeID),
 	}, nil
 }
@@ -245,6 +268,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Stack, error) {
 			if errors.Is(err, ErrNotFound) {
 				continue
 			}
+
 			return nil, err
 		}
 
@@ -252,6 +276,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Stack, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if !ok {
 			continue
 		}
@@ -431,15 +456,35 @@ func (s *Service) CleanupExpiredAndOrphaned(ctx context.Context) {
 				registeredPods[st.PodID] = struct{}{}
 			}
 
-			podIDs, err := s.k8s.ListPods(ctx, s.cfg.Namespace)
+			// Refs: https://github.com/nullforu/container-provisioner-k8s/pull/11
+			podsWithCreation, err := s.k8s.ListPodsWithCreation(ctx, s.cfg.Namespace)
 			if err != nil {
 				orphanScanErrors++
 				failures++
 				slog.Error("list kubernetes pods for orphan cleanup failed", slog.String("namespace", s.cfg.Namespace), slog.Any("error", err))
 			} else {
-				for _, podID := range podIDs {
+				graceCutoff := now.Add(-2 * time.Minute)
+
+				for podID, info := range podsWithCreation {
 					if _, ok := registeredPods[podID]; ok {
 						continue
+					}
+
+					if !info.CreatedAt.IsZero() && info.CreatedAt.After(graceCutoff) {
+						slog.Info("skipping orphan pod cleanup for recently created pod", slog.String("pod_id", podID), slog.Time("created_at", info.CreatedAt), slog.Time("grace_cutoff", graceCutoff))
+						continue
+					}
+
+					if info.StackID != "" {
+						st, ok, getErr := s.repo.Get(ctx, info.StackID)
+						if getErr != nil {
+							slog.Error("orphan cleanup repo get failed", slog.String("pod_id", podID), slog.String("stack_id", info.StackID), slog.Any("error", getErr))
+							continue
+						}
+
+						if ok && st.PodID == podID {
+							continue
+						}
 					}
 
 					orphanPodTargets++
@@ -511,6 +556,59 @@ func mapProvisionError(err error) error {
 	}
 
 	return fmt.Errorf("k8s provision failed: %w", err)
+}
+
+func (s *Service) reservePorts(ctx context.Context, targets []PortSpec) ([]PortMapping, []int, error) {
+	ports := make([]PortMapping, 0, len(targets))
+	reservedPorts := make([]int, 0, len(targets))
+
+	for _, target := range targets {
+		nodePort, err := s.repo.ReserveNodePort(ctx, s.cfg.NodePortMin, s.cfg.NodePortMax)
+		if err != nil {
+			s.releasePorts(reservedPorts)
+			return nil, nil, err
+		}
+
+		reservedPorts = append(reservedPorts, nodePort)
+		ports = append(ports, PortMapping{
+			ContainerPort: target.ContainerPort,
+			Protocol:      target.Protocol,
+			NodePort:      nodePort,
+		})
+	}
+
+	return ports, reservedPorts, nil
+}
+
+func (s *Service) releasePorts(reservedPorts []int) {
+	for _, reserved := range reservedPorts {
+		if err := s.repo.ReleaseNodePort(context.Background(), reserved); err != nil {
+			slog.Error("release reserved nodeport failed", slog.Int("node_port", reserved), slog.Any("error", err))
+		}
+	}
+}
+
+func isNodePortAllocatedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var status apierrors.APIStatus
+	if errors.As(err, &status) {
+		details := status.Status().Details
+		if details != nil {
+			for _, cause := range details.Causes {
+				if cause.Type == "FieldValueInvalid" && strings.Contains(cause.Field, "spec.ports") {
+					msg := strings.ToLower(cause.Message)
+					if strings.Contains(msg, "already allocated") {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "provided port is already allocated") || strings.Contains(msg, "already allocated")
 }
 
 func isQuotaExceededMessage(msg string) bool {
