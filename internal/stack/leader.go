@@ -34,6 +34,13 @@ func StartLeaderElection(ctx context.Context, cfg config.StackConfig, log *slog.
 		return fmt.Errorf("build kube config: %w", err)
 	}
 
+	if cfg.K8sQPS > 0 {
+		restCfg.QPS = cfg.K8sQPS
+	}
+	if cfg.K8sBurst > 0 {
+		restCfg.Burst = cfg.K8sBurst
+	}
+
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return fmt.Errorf("new kubernetes client: %w", err)
