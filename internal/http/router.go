@@ -57,7 +57,33 @@ func NewRouter(ctx context.Context, cfg config.Config, logger *logging.Logger) (
 
 	service := stack.NewService(cfg.Stack, repo, k8s)
 	scheduler := stack.NewScheduler(cfg.Stack.SchedulerInterval, service)
-	go scheduler.Run(ctx)
+	if cfg.Stack.LeaderElection.Enabled {
+		if cfg.Stack.UseMockKubernetes {
+			if log != nil {
+				log.Warn("leader election disabled because K8S_USE_MOCK=true",
+					slog.String("namespace", cfg.Stack.LeaderElection.Namespace),
+					slog.String("name", cfg.Stack.LeaderElection.LeaseName),
+				)
+			}
+
+			go scheduler.Run(ctx)
+		} else {
+			if log != nil {
+				log.Info("leader election enabled",
+					slog.String("namespace", cfg.Stack.LeaderElection.Namespace),
+					slog.String("name", cfg.Stack.LeaderElection.LeaseName),
+				)
+			}
+
+			if err := stack.StartLeaderElection(ctx, cfg.Stack, log, func(leaderCtx context.Context) {
+				scheduler.Run(leaderCtx)
+			}); err != nil {
+				return nil, fmt.Errorf("start leader election: %w", err)
+			}
+		}
+	} else {
+		go scheduler.Run(ctx)
+	}
 
 	h := handlers.New(service)
 
