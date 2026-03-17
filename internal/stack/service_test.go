@@ -598,7 +598,7 @@ func TestBatchDeleteHappyPath(t *testing.T) {
 	}
 
 	var job BatchDeleteJob
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		job, err = svc.GetBatchDeleteJob(context.Background(), jobID)
 		if err != nil {
 			t.Fatalf("get job error: %v", err)
@@ -641,7 +641,7 @@ func TestBatchDeleteNotFound(t *testing.T) {
 	}
 
 	var job BatchDeleteJob
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		job, err = svc.GetBatchDeleteJob(context.Background(), jobID)
 		if err != nil {
 			t.Fatalf("get job error: %v", err)
@@ -709,7 +709,7 @@ func TestBatchDeleteAllFailed(t *testing.T) {
 	}
 
 	var job BatchDeleteJob
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		job, err = svc.GetBatchDeleteJob(context.Background(), jobID)
 		if err != nil {
 			t.Fatalf("get job error: %v", err)
