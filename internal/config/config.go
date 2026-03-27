@@ -39,6 +39,7 @@ type StackConfig struct {
 	NodePortMin       int
 	NodePortMax       int
 	PortLockTTL       time.Duration
+	LeaderElection    LeaderElectionConfig
 
 	DynamoTableName      string
 	AWSRegion            string
@@ -54,6 +55,15 @@ type StackConfig struct {
 	UseMockKubernetes bool
 	RequireIngressNP  bool
 	StackNodeRole     string
+}
+
+type LeaderElectionConfig struct {
+	Enabled       bool
+	Namespace     string
+	LeaseName     string
+	LeaseDuration time.Duration
+	RenewDeadline time.Duration
+	RetryPeriod   time.Duration
 }
 
 func Load() (Config, error) {
@@ -109,6 +119,26 @@ func Load() (Config, error) {
 		errs = append(errs, err)
 	}
 
+	leaderEnabled, err := getEnvBool("LEADER_ELECTION_ENABLED", false)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	leaderLeaseDuration, err := getDuration("LEADER_ELECTION_LEASE_DURATION", 15*time.Second)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	leaderRenewDeadline, err := getDuration("LEADER_ELECTION_RENEW_DEADLINE", 10*time.Second)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	leaderRetryPeriod, err := getDuration("LEADER_ELECTION_RETRY_PERIOD", 2*time.Second)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	useMockK8s, err := getEnvBool("K8S_USE_MOCK", false)
 	if err != nil {
 		errs = append(errs, err)
@@ -158,12 +188,20 @@ func Load() (Config, error) {
 			Value:   apiKeyValue,
 		},
 		Stack: StackConfig{
-			Namespace:            getEnv("STACK_NAMESPACE", "stacks"),
-			StackTTL:             stackTTL,
-			SchedulerInterval:    schedulerInterval,
-			NodePortMin:          nodePortMin,
-			NodePortMax:          nodePortMax,
-			PortLockTTL:          portLockTTL,
+			Namespace:         getEnv("STACK_NAMESPACE", "stacks"),
+			StackTTL:          stackTTL,
+			SchedulerInterval: schedulerInterval,
+			NodePortMin:       nodePortMin,
+			NodePortMax:       nodePortMax,
+			PortLockTTL:       portLockTTL,
+			LeaderElection: LeaderElectionConfig{
+				Enabled:       leaderEnabled,
+				Namespace:     getEnv("LEADER_ELECTION_NAMESPACE", "backend"),
+				LeaseName:     getEnv("LEADER_ELECTION_NAME", "container-provisioner"),
+				LeaseDuration: leaderLeaseDuration,
+				RenewDeadline: leaderRenewDeadline,
+				RetryPeriod:   leaderRetryPeriod,
+			},
 			DynamoTableName:      getEnv("DDB_STACK_TABLE", "smctf-stacks"),
 			AWSRegion:            getEnv("AWS_REGION", "us-east-1"),
 			AWSEndpoint:          getEnv("AWS_ENDPOINT", ""),
@@ -325,6 +363,36 @@ func validateConfig(cfg Config) error {
 
 	if cfg.Stack.PortLockTTL <= 0 {
 		errs = append(errs, errors.New("STACK_PORT_LOCK_TTL must be positive"))
+	}
+
+	if cfg.Stack.LeaderElection.Enabled {
+		if cfg.Stack.LeaderElection.Namespace == "" {
+			errs = append(errs, errors.New("LEADER_ELECTION_NAMESPACE must not be empty when LEADER_ELECTION_ENABLED=true"))
+		}
+
+		if cfg.Stack.LeaderElection.LeaseName == "" {
+			errs = append(errs, errors.New("LEADER_ELECTION_NAME must not be empty when LEADER_ELECTION_ENABLED=true"))
+		}
+
+		if cfg.Stack.LeaderElection.LeaseDuration <= 0 {
+			errs = append(errs, errors.New("LEADER_ELECTION_LEASE_DURATION must be positive when LEADER_ELECTION_ENABLED=true"))
+		}
+
+		if cfg.Stack.LeaderElection.RenewDeadline <= 0 {
+			errs = append(errs, errors.New("LEADER_ELECTION_RENEW_DEADLINE must be positive when LEADER_ELECTION_ENABLED=true"))
+		}
+
+		if cfg.Stack.LeaderElection.RetryPeriod <= 0 {
+			errs = append(errs, errors.New("LEADER_ELECTION_RETRY_PERIOD must be positive when LEADER_ELECTION_ENABLED=true"))
+		}
+
+		if cfg.Stack.LeaderElection.RenewDeadline >= cfg.Stack.LeaderElection.LeaseDuration {
+			errs = append(errs, errors.New("LEADER_ELECTION_RENEW_DEADLINE must be less than LEADER_ELECTION_LEASE_DURATION"))
+		}
+
+		if cfg.Stack.LeaderElection.RetryPeriod >= cfg.Stack.LeaderElection.RenewDeadline {
+			errs = append(errs, errors.New("LEADER_ELECTION_RETRY_PERIOD must be less than LEADER_ELECTION_RENEW_DEADLINE"))
+		}
 	}
 
 	if cfg.Stack.K8sQPS <= 0 {

@@ -25,10 +25,28 @@ spec:
               value: "production"
             - name: HTTP_ADDR
               value: ":8081"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: API_KEY_ENABLED
               value: "true"
             - name: API_KEY
               value: "secret"
+            - name: LEADER_ELECTION_ENABLED
+              value: "true"
+            - name: LEADER_ELECTION_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LEADER_ELECTION_NAME
+              value: "container-provisioner"
+            - name: LEADER_ELECTION_LEASE_DURATION
+              value: "15s"
+            - name: LEADER_ELECTION_RENEW_DEADLINE
+              value: "10s"
+            - name: LEADER_ELECTION_RETRY_PERIOD
+              value: "2s"
             - name: DDB_USE_MOCK
               value: "false"
             - name: K8S_USE_MOCK
