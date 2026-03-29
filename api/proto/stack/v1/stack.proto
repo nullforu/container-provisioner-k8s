@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package stack.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "smctf/internal/gen/stack/v1;stackv1";
+
+service StackService {
+  rpc Healthz(HealthzRequest) returns (HealthzResponse);
+  rpc CreateStack(CreateStackRequest) returns (CreateStackResponse);
+  rpc GetStack(GetStackRequest) returns (GetStackResponse);
+  rpc GetStackStatusSummary(GetStackStatusSummaryRequest) returns (GetStackStatusSummaryResponse);
+  rpc DeleteStack(DeleteStackRequest) returns (DeleteStackResponse);
+  rpc ListStacks(ListStacksRequest) returns (ListStacksResponse);
+  rpc CreateBatchDeleteJob(CreateBatchDeleteJobRequest) returns (CreateBatchDeleteJobResponse);
+  rpc GetBatchDeleteJob(GetBatchDeleteJobRequest) returns (GetBatchDeleteJobResponse);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+message HealthzRequest {}
+
+message HealthzResponse {
+  string status = 1;
+}
+
+message CreateStackRequest {
+  string pod_spec = 1;
+  repeated PortSpec target_ports = 2;
+}
+
+message CreateStackResponse {
+  Stack stack = 1;
+}
+
+message GetStackRequest {
+  string stack_id = 1;
+}
+
+message GetStackResponse {
+  Stack stack = 1;
+}
+
+message GetStackStatusSummaryRequest {
+  string stack_id = 1;
+}
+
+message GetStackStatusSummaryResponse {
+  StackStatusSummary summary = 1;
+}
+
+message DeleteStackRequest {
+  string stack_id = 1;
+}
+
+message DeleteStackResponse {
+  bool deleted = 1;
+  string stack_id = 2;
+}
+
+message ListStacksRequest {}
+
+message ListStacksResponse {
+  repeated Stack stacks = 1;
+}
+
+message CreateBatchDeleteJobRequest {
+  repeated string stack_ids = 1;
+}
+
+message CreateBatchDeleteJobResponse {
+  string job_id = 1;
+}
+
+message GetBatchDeleteJobRequest {
+  string job_id = 1;
+}
+
+message GetBatchDeleteJobResponse {
+  BatchDeleteJob job = 1;
+}
+
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  Stats stats = 1;
+}
+
+message Stats {
+  int32 total_stacks = 1;
+  int32 active_stacks = 2;
+  map<string, int32> node_distribution = 3;
+  int32 used_node_ports = 4;
+  int64 reserved_cpu_milli = 5;
+  int64 reserved_memory_bytes = 6;
+}
+
+message Stack {
+  string stack_id = 1;
+  string pod_id = 2;
+  string namespace = 3;
+  string node_id = 4;
+  optional string node_public_ip = 5;
+  string pod_spec = 6;
+  repeated PortMapping ports = 7;
+  string service_name = 8;
+  Status status = 9;
+  google.protobuf.Timestamp ttl_expires_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  int64 requested_cpu_milli = 13;
+  int64 requested_memory_bytes = 14;
+  repeated PortSpec target_ports = 15;
+}
+
+message StackStatusSummary {
+  string stack_id = 1;
+  Status status = 2;
+  google.protobuf.Timestamp ttl = 3;
+  repeated PortMapping ports = 4;
+  optional string node_public_ip = 5;
+  repeated PortSpec target_ports = 6;
+}
+
+message PortSpec {
+  int32 container_port = 1;
+  string protocol = 2;
+}
+
+message PortMapping {
+  int32 container_port = 1;
+  string protocol = 2;
+  int32 node_port = 3;
+}
+
+message BatchDeleteJob {
+  string job_id = 1;
+  JobStatus status = 2;
+  int32 total = 3;
+  int32 deleted = 4;
+  int32 not_found = 5;
+  int32 failed = 6;
+  repeated JobError errors = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message JobError {
+  string stack_id = 1;
+  string error = 2;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_CREATING = 1;
+  STATUS_RUNNING = 2;
+  STATUS_STOPPED = 3;
+  STATUS_FAILED = 4;
+  STATUS_NODE_DELETED = 5;
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_QUEUED = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_COMPLETED = 3;
+  JOB_STATUS_FAILED = 4;
+}

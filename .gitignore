@@ -38,6 +38,8 @@ go.work.sum
 logs
 dummy.sql
 *.dummy.sql
+server
+.bin/
 
 # Python cache
 __pycache__/

@@ -5,6 +5,22 @@ nav_order: 1
 
 Base URL: `http://localhost:8081`
 
+gRPC Address (default): `localhost:9090`
+
+## gRPC
+
+The gRPC service exposes the same stack APIs for internal service-to-service calls.
+
+- Service: `stack.v1.StackService`
+- Address: `GRPC_ADDR` (default `:9090`)
+- API key: if enabled, send metadata key `x-api-key` (same value as REST)
+
+Example (grpcurl):
+
+```bash
+grpcurl -plaintext -H "x-api-key: <your-api-key>" localhost:9090 stack.v1.StackService/Healthz
+```
+
 ## Authentication
 
 All endpoints require an API key when API key auth is enabled (default). You can provide it via:

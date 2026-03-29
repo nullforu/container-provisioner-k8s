@@ -35,8 +35,9 @@ func StartLeaderElection(ctx context.Context, cfg config.StackConfig, log *slog.
 	}
 
 	if cfg.K8sQPS > 0 {
-		restCfg.QPS = cfg.K8sQPS
+		restCfg.QPS = float32(cfg.K8sQPS)
 	}
+
 	if cfg.K8sBurst > 0 {
 		restCfg.Burst = cfg.K8sBurst
 	}

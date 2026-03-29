@@ -12,9 +12,12 @@ import (
 )
 
 type Config struct {
-	AppEnv          string
-	HTTPAddr        string
-	ShutdownTimeout time.Duration
+	AppEnv                string
+	HTTPAddr              string
+	GRPCAddr              string
+	GRPCEnabled           bool
+	GRPCReflectionEnabled bool
+	ShutdownTimeout       time.Duration
 
 	Logging LoggingConfig
 	APIKey  APIKeyConfig
@@ -75,6 +78,7 @@ func Load() (Config, error) {
 
 	appEnv := getEnv("APP_ENV", "local")
 	httpAddr := getEnv("HTTP_ADDR", ":8081")
+	grpcAddr := getEnv("GRPC_ADDR", ":9090")
 	shutdownTimeout, err := getDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
 		errs = append(errs, err)
@@ -88,6 +92,16 @@ func Load() (Config, error) {
 	}
 
 	apiKeyEnabled, err := getEnvBool("API_KEY_ENABLED", true)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	grpcEnabled, err := getEnvBool("GRPC_ENABLED", true)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	grpcReflectionEnabled, err := getEnvBool("GRPC_REFLECTION_ENABLED", true)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -175,9 +189,12 @@ func Load() (Config, error) {
 	stackNodeRole := getEnv("STACK_NODE_ROLE", "stack")
 
 	cfg := Config{
-		AppEnv:          appEnv,
-		HTTPAddr:        httpAddr,
-		ShutdownTimeout: shutdownTimeout,
+		AppEnv:                appEnv,
+		HTTPAddr:              httpAddr,
+		GRPCAddr:              grpcAddr,
+		GRPCEnabled:           grpcEnabled,
+		GRPCReflectionEnabled: grpcReflectionEnabled,
+		ShutdownTimeout:       shutdownTimeout,
 		Logging: LoggingConfig{
 			Dir:          logDir,
 			FilePrefix:   logPrefix,
@@ -328,6 +345,9 @@ func validateConfig(cfg Config) error {
 	if cfg.HTTPAddr == "" {
 		errs = append(errs, errors.New("HTTP_ADDR must not be empty"))
 	}
+	if cfg.GRPCEnabled && cfg.GRPCAddr == "" {
+		errs = append(errs, errors.New("GRPC_ADDR must not be empty when GRPC_ENABLED=true"))
+	}
 
 	if cfg.Logging.Dir == "" {
 		errs = append(errs, errors.New("LOG_DIR must not be empty"))
@@ -454,9 +474,12 @@ func FormatForLog(cfg Config) map[string]any {
 	cfg = Redact(cfg)
 
 	return map[string]any{
-		"app_env":          cfg.AppEnv,
-		"http_addr":        cfg.HTTPAddr,
-		"shutdown_timeout": seconds(cfg.ShutdownTimeout),
+		"app_env":                 cfg.AppEnv,
+		"http_addr":               cfg.HTTPAddr,
+		"grpc_addr":               cfg.GRPCAddr,
+		"grpc_enabled":            cfg.GRPCEnabled,
+		"grpc_reflection_enabled": cfg.GRPCReflectionEnabled,
+		"shutdown_timeout":        seconds(cfg.ShutdownTimeout),
 		"logging": map[string]any{
 			"dir":            cfg.Logging.Dir,
 			"file_prefix":    cfg.Logging.FilePrefix,
