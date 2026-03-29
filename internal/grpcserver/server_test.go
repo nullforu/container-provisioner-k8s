@@ -193,3 +193,156 @@ func TestGetStats(t *testing.T) {
 		t.Fatalf("unexpected stats response: %+v", resp.GetStats())
 	}
 }
+
+func TestCreateStackErrorMapping(t *testing.T) {
+	service := stubStackService{
+		createFn: func(context.Context, stack.CreateInput) (stack.Stack, error) {
+			return stack.Stack{}, stack.ErrInvalidInput
+		},
+	}
+
+	conn, cleanup := dialTestServer(t, service, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.CreateStack(context.Background(), &stackv1.CreateStackRequest{PodSpec: "pod"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.InvalidArgument)
+}
+
+func TestGetStackValidation(t *testing.T) {
+	conn, cleanup := dialTestServer(t, stubStackService{}, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.GetStack(context.Background(), &stackv1.GetStackRequest{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.InvalidArgument)
+}
+
+func TestGetStackNotFound(t *testing.T) {
+	service := stubStackService{
+		getDetailsFn: func(context.Context, string) (stack.Stack, error) {
+			return stack.Stack{}, stack.ErrNotFound
+		},
+	}
+
+	conn, cleanup := dialTestServer(t, service, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.GetStack(context.Background(), &stackv1.GetStackRequest{StackId: "missing"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.NotFound)
+}
+
+func TestDeleteStackNotFound(t *testing.T) {
+	service := stubStackService{
+		deleteFn: func(context.Context, string) error {
+			return stack.ErrNotFound
+		},
+	}
+
+	conn, cleanup := dialTestServer(t, service, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.DeleteStack(context.Background(), &stackv1.DeleteStackRequest{StackId: "missing"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.NotFound)
+}
+
+func TestCreateBatchDeleteJobValidation(t *testing.T) {
+	conn, cleanup := dialTestServer(t, stubStackService{}, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.CreateBatchDeleteJob(context.Background(), &stackv1.CreateBatchDeleteJobRequest{StackIds: []string{"", "ok"}})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.InvalidArgument)
+}
+
+func TestGetBatchDeleteJobNotFound(t *testing.T) {
+	service := stubStackService{
+		getBatchDeleteJobFn: func(context.Context, string) (stack.BatchDeleteJob, error) {
+			return stack.BatchDeleteJob{}, stack.ErrNotFound
+		},
+	}
+
+	conn, cleanup := dialTestServer(t, service, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.GetBatchDeleteJob(context.Background(), &stackv1.GetBatchDeleteJobRequest{JobId: "missing"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.NotFound)
+}
+
+func TestGetStackStatusSummaryNotFound(t *testing.T) {
+	service := stubStackService{
+		getStatusSummaryFn: func(context.Context, string) (stack.StackStatusSummary, error) {
+			return stack.StackStatusSummary{}, stack.ErrNotFound
+		},
+	}
+
+	conn, cleanup := dialTestServer(t, service, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	_, err := client.GetStackStatusSummary(context.Background(), &stackv1.GetStackStatusSummaryRequest{StackId: "missing"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	assertCode(t, err, codes.NotFound)
+}
+
+func TestListStacksResponse(t *testing.T) {
+	service := stubStackService{
+		listAllFn: func(context.Context) ([]stack.Stack, error) {
+			return []stack.Stack{
+				{StackID: "stack-1"},
+				{StackID: "stack-2"},
+			}, nil
+		},
+	}
+
+	conn, cleanup := dialTestServer(t, service, config.APIKeyConfig{Enabled: false})
+	defer cleanup()
+
+	client := stackv1.NewStackServiceClient(conn)
+	resp, err := client.ListStacks(context.Background(), &stackv1.ListStacksRequest{})
+	if err != nil {
+		t.Fatalf("list stacks: %v", err)
+	}
+
+	if len(resp.GetStacks()) != 2 {
+		t.Fatalf("unexpected stacks response: %+v", resp.GetStacks())
+	}
+}
+
+func assertCode(t *testing.T, err error, code codes.Code) {
+	t.Helper()
+	st, _ := status.FromError(err)
+	if st.Code() != code {
+		t.Fatalf("expected %v, got %v", code, st.Code())
+	}
+}

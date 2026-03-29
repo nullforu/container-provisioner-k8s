@@ -103,9 +103,8 @@ func main() {
 
 		go func() {
 			logger.Info("grpc server listening", slog.String("addr", cfg.GRPCAddr))
-			if err := grpcServer.Serve(grpcListener); err != nil {
+			if err := grpcServer.Serve(grpcListener); err != nil && err != grpc.ErrServerStopped {
 				logger.Error("grpc server error", slog.Any("error", err))
-				os.Exit(1)
 			}
 		}()
 	}
