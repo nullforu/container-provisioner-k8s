@@ -52,7 +52,7 @@ func (s *Server) CreateStack(ctx context.Context, req *stackv1.CreateStackReques
 
 	st, err := s.service.Create(ctx, input)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.CreateStackResponse{Stack: toProtoStack(st)}, nil
@@ -70,7 +70,7 @@ func (s *Server) GetStack(ctx context.Context, req *stackv1.GetStackRequest) (*s
 
 	st, err := s.service.GetDetails(ctx, stackID)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.GetStackResponse{Stack: toProtoStack(st)}, nil
@@ -88,7 +88,7 @@ func (s *Server) GetStackStatusSummary(ctx context.Context, req *stackv1.GetStac
 
 	summary, err := s.service.GetStatusSummary(ctx, stackID)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.GetStackStatusSummaryResponse{Summary: toProtoStackStatusSummary(summary)}, nil
@@ -105,7 +105,7 @@ func (s *Server) DeleteStack(ctx context.Context, req *stackv1.DeleteStackReques
 	}
 
 	if err := s.service.Delete(ctx, stackID); err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.DeleteStackResponse{Deleted: true, StackId: stackID}, nil
@@ -114,7 +114,7 @@ func (s *Server) DeleteStack(ctx context.Context, req *stackv1.DeleteStackReques
 func (s *Server) ListStacks(ctx context.Context, _ *stackv1.ListStacksRequest) (*stackv1.ListStacksResponse, error) {
 	items, err := s.service.ListAll(ctx)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	out := make([]*stackv1.Stack, 0, len(items))
@@ -148,7 +148,7 @@ func (s *Server) CreateBatchDeleteJob(ctx context.Context, req *stackv1.CreateBa
 
 	jobID, err := s.service.StartBatchDelete(ctx, clean)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.CreateBatchDeleteJobResponse{JobId: jobID}, nil
@@ -166,7 +166,7 @@ func (s *Server) GetBatchDeleteJob(ctx context.Context, req *stackv1.GetBatchDel
 
 	job, err := s.service.GetBatchDeleteJob(ctx, jobID)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.GetBatchDeleteJobResponse{Job: toProtoBatchDeleteJob(job)}, nil
@@ -175,14 +175,16 @@ func (s *Server) GetBatchDeleteJob(ctx context.Context, req *stackv1.GetBatchDel
 func (s *Server) GetStats(ctx context.Context, _ *stackv1.GetStatsRequest) (*stackv1.GetStatsResponse, error) {
 	stats, err := s.service.Stats(ctx)
 	if err != nil {
-		return nil, grpcError(err)
+		return nil, s.grpcError(err)
 	}
 
 	return &stackv1.GetStatsResponse{Stats: toProtoStats(stats)}, nil
 }
 
-func grpcError(err error) error {
+func (s *Server) grpcError(err error) error {
 	switch {
+	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+		return status.FromContextError(err).Err()
 	case errors.Is(err, stack.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, stack.ErrInvalidInput), errors.Is(err, stack.ErrPodSpecInvalid):
@@ -190,6 +192,9 @@ func grpcError(err error) error {
 	case errors.Is(err, stack.ErrNoAvailableNodePort), errors.Is(err, stack.ErrClusterSaturated):
 		return status.Error(codes.Unavailable, err.Error())
 	default:
+		if s.logger != nil {
+			s.logger.Error("grpc internal error", slog.Any("error", err))
+		}
 		return status.Error(codes.Internal, "internal server error")
 	}
 }

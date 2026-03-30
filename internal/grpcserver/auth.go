@@ -28,11 +28,13 @@ func APIKeyUnaryInterceptor(cfg config.APIKeyConfig) grpc.UnaryServerInterceptor
 			key = firstHeader(md, "api_key")
 		}
 
-		if strings.TrimSpace(key) == "" {
+		key = strings.TrimSpace(key)
+		expected := strings.TrimSpace(cfg.Value)
+		if key == "" {
 			return nil, status.Error(codes.Unauthenticated, "api key is required")
 		}
 
-		if key != cfg.Value {
+		if expected == "" || key != expected {
 			return nil, status.Error(codes.Unauthenticated, "invalid api key")
 		}
 
