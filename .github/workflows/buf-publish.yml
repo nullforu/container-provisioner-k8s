@@ -1,0 +1,25 @@
+name: buf-publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+
+      - name: Lint
+        run: buf lint
+
+      - name: Push to BSR
+        env:
+          BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
+        run: buf push
