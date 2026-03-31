@@ -1,8 +1,9 @@
 ## SMCTF container-provisioner
 
-Container provisioning/allocation HTTP microservice for [SMCTF](https://github.com/nullforu/smctf).
+Container provisioning/allocation HTTP/gRPC microservice for [SMCTF](https://github.com/nullforu/smctf).
 
-- Port: `8081`
+- Default HTTP Server Port: `8081`
+- Default gRPC Server Port: `9090`
 
 ## Architecture
 
